@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chatbot DiSeCan </title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body>
+
+    <aside id="sidebar">
+        <div class="logo-container">
+            <img src="/assets/logo_disecan.png" alt="Logo DiSeCan" />
+            <img src="/assets/logo_iatext_vertical.png" alt="Logo IAText" />
+        </div>
+        <hr />
+        <h2>Filtros de Búsqueda</h2>
+
+        <label>Legislatura
+            <select id="filter-legislature">
+                <option value="">Todas</option>
+                <option value="X Legislatura">X Legislatura</option>
+                <option value="IX Legislatura">IX Legislatura</option>
+            </select>
+        </label>
+
+        <label>Orador/a
+            <select id="filter-speaker">
+                <option value="">Todos/as</option>
+                <option value="Presidente/a">Presidente/a</option>
+                <option value="Diputado/a A">Diputado/a A</option>
+                <option value="Diputado/a B">Diputado/a B</option>
+            </select>
+        </label>
+
+        <label>Sesión
+            <select id="filter-session">
+                <option value="">Número de sesión</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+            </select>
+        </label>
+
+        <label>Fecha sesión
+            <input type="date" id="filter-date" />
+        </label>
+
+        <button onclick="clearFilters()">Limpiar Filtros</button>
+    </aside>
+
+    <div id="main">
+        <header>
+            <h1>Chatbot DiSeCan</h1>
+        </header>
+
+        <div id="messages"></div>
+
+        <form id="chat-form" onsubmit="sendMessage(event)">
+            <input type="text" id="chat-input" placeholder="Escriba su pregunta sobre el Diario de Sesiones..." />
+            <button type="submit">Enviar</button>
+        </form>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+
+</html>
