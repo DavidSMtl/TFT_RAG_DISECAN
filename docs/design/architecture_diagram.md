@@ -19,7 +19,7 @@ graph TD
     classDef llm fill:#7a1f0f,stroke:#5a1505,stroke-width:2px,color:#fff,rx:10,ry:10;
 
     %% Flujo del Usuario (Online)
-    User((Usuario)):::usuario -->|Pregunta NL| UI[Streamlit UI]:::frontend
+    User((Usuario)):::usuario -->|Pregunta NL| UI[HTML/CSS/JS UI]:::frontend
     UI -->|Consulta| LlamaIndex[LlamaIndex Router]:::orquestador
     
     %% Recuperación Híbrida
