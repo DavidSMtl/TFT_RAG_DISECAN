@@ -105,6 +105,17 @@ header {
     background: #24282f;
 }
 
+/* Botón de menú (solo en móvil) */
+.btn-menu {
+    display: none;
+    background: none;
+    border: none;
+    color: #e8eaf0;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+}
+
 header h1 {
     font-size: 1.2rem;
     margin: 0;
@@ -236,4 +247,38 @@ header h1 {
     padding: 0.6rem 1.2rem;
     cursor: pointer;
     font-size: 0.9rem;
+}
+
+/* ── Responsive: móvil ── */
+#sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 100;
+}
+
+@media (max-width: 768px) {
+    #sidebar {
+        position: fixed;
+        left: -320px; /* Oculto a la izquierda */
+        top: 0;
+        bottom: 0;
+        height: 100%;
+        max-width: 300px;
+        z-index: 101;
+        transition: left 0.3s ease;
+    }
+
+    #sidebar.open {
+        left: 0; 
+    }
+
+    #sidebar-overlay.open {
+        display: block;
+    }
+
+    .btn-menu {
+        display: inline-block;
+    }
 }

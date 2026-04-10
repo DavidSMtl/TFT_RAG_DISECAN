@@ -1,3 +1,9 @@
+//Toggle del sidebar (móvil)
+function toggleSidebar() {
+    document.getElementById("sidebar").classList.toggle("open");
+    document.getElementById("sidebar-overlay").classList.toggle("open");
+}
+
 //Limpiar filtros
 function clearFilters() {
     document.getElementById("filter-legislature").value = "";

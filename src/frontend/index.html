@@ -8,15 +8,15 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
 
     <aside id="sidebar">
         <div class="logo-container">
-            <img src="/assets/logo_disecan.png" alt="Logo DiSeCan" />
-            <img src="/assets/logo_iatext_vertical.png" alt="Logo IAText" />
+            <img src="../assets/logo_disecan.png" alt="Logo DiSeCan" />
+            <img src="../assets/logo_iatext_vertical.png" alt="Logo IAText" />
         </div>
         <hr />
         <h2>Filtros de Búsqueda</h2>
@@ -54,8 +54,12 @@
         <button onclick="clearFilters()">Limpiar Filtros</button>
     </aside>
 
+    <!-- Overlay para móvil -->
+    <div id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
     <div id="main">
         <header>
+            <button id="btn-menu" class="btn-menu" onclick="toggleSidebar()" aria-label="Abrir menú">☰</button>
             <h1>Chatbot DiSeCan</h1>
         </header>
 
