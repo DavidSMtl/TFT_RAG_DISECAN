@@ -1,0 +1,34 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: disecan-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: disecan_root
+      MYSQL_DATABASE: disecan
+      MYSQL_USER: disecan_user
+      MYSQL_PASSWORD: disecan_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      # Datos persistentes entre reinicios
+      - disecan_mysql_data:/var/lib/mysql
+      # Scripts de inicialización (MySQL los ejecuta la primera vez)
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max_allowed_packet=256M
+      --innodb_buffer_pool_size=1G
+      --innodb_redo_log_capacity=2G
+      --innodb_flush_log_at_trx_commit=2
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pdisecan_root"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  disecan_mysql_data:
+    driver: local

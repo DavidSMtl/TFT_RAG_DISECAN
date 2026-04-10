@@ -1,0 +1,36 @@
+# docker-compose.sample.yml
+# Uso en portátil (sin el dump de 1GB):
+#   docker compose -f docker-compose.sample.yml up -d
+#
+# Carga únicamente el sample SQL commiteado en git (database/sample/sample.sql)
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: disecan-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: disecan_root
+      MYSQL_DATABASE: disecan
+      MYSQL_USER: disecan_user
+      MYSQL_PASSWORD: disecan_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - disecan_mysql_data_sample:/var/lib/mysql
+      - ./database/sample:/docker-entrypoint-initdb.d:ro   # solo el sample (~MB)
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max_allowed_packet=64M
+      --innodb_buffer_pool_size=256M
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pdisecan_root"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  disecan_mysql_data_sample:
+    driver: local
