@@ -2,6 +2,14 @@
 
 Trabajo de Fin de Título pensado para realizar una arquitectura RAG sobre documentos del parlamento canario a gran escala.
 
+## Architecture & Entity-Relationship Modeling
+
+### System Architecture
+![Architecture Diagram](docs/design/Architecture-1.svg)
+
+### Data Modeling & Context Layer
+![Entity Relation Diagram](docs/design/EntityRelation-1.svg)
+
 ---
 
 ## Usage Guide
