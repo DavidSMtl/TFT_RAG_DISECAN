@@ -72,7 +72,8 @@ def create_sample(num_docs: int, output: Path) -> None:
             palabras.extend(cur.fetchall())
         print(f"  Palabras: {len(palabras)}")
 
-        # 4. Usuarios referenciados en frases (revisada/metafora)
+        # 4. Usuarios referenciados en frases (revisada/metafora) — tabla opcional
+        usuarios: list[dict] = []
         user_ids: set[str] = set()
         for f in frases:
             if f.get("revisada"):
@@ -80,11 +81,12 @@ def create_sample(num_docs: int, output: Path) -> None:
             if f.get("metafora"):
                 user_ids.add(f["metafora"])
         if user_ids:
-            ph = ", ".join(["%s"] * len(user_ids))
-            cur.execute(f"SELECT * FROM usuario WHERE idUsuario IN ({ph})", list(user_ids))
-            usuarios = cur.fetchall()
-        else:
-            usuarios = []
+            try:
+                ph = ", ".join(["%s"] * len(user_ids))
+                cur.execute(f"SELECT * FROM usuario WHERE idUsuario IN ({ph})", list(user_ids))
+                usuarios = cur.fetchall()
+            except Exception:
+                pass  # tabla usuario no existe en este dump
 
     # 5. Escribir SQL
     lines: list[str] = []
@@ -99,7 +101,6 @@ def create_sample(num_docs: int, output: Path) -> None:
     lines.append("DROP TABLE IF EXISTS `palabras`;")
     lines.append("DROP TABLE IF EXISTS `frases`;")
     lines.append("DROP TABLE IF EXISTS `documentos`;")
-    lines.append("DROP TABLE IF EXISTS `usuario`;")
     lines.append("")
 
     lines.append("""CREATE TABLE `documentos` (
@@ -113,12 +114,6 @@ def create_sample(num_docs: int, output: Path) -> None:
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """)
 
-    lines.append("""CREATE TABLE `usuario` (
-  `idUsuario` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `nombre` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  PRIMARY KEY (`idUsuario`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-""")
 
     lines.append("""CREATE TABLE `frases` (
   `idFrases` int NOT NULL AUTO_INCREMENT,
@@ -158,7 +153,8 @@ def create_sample(num_docs: int, output: Path) -> None:
         lines.append("")
 
     write_inserts("documentos", docs)
-    write_inserts("usuario", usuarios)
+    if usuarios:
+        write_inserts("usuario", usuarios)
     write_inserts("frases", frases)
     write_inserts("palabras", palabras, batch_size=500)
 
