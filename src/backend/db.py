@@ -57,6 +57,21 @@ def get_cursor(conn: MySQLConnection) -> Generator[MySQLCursor, None, None]:
 # ── Consultas de metadatos ─────────────────────────────────────────────────────
 
 
+def _fix_encoding(row: dict | None) -> dict | None:
+    if not row:
+        return row
+    fixed = {}
+    for k, v in row.items():
+        if isinstance(v, str):
+            try:
+                fixed[k] = v.encode('cp1252').decode('utf-8')
+            except Exception:
+                fixed[k] = v
+        else:
+            fixed[k] = v
+    return fixed
+
+
 def get_documentos(filtros: dict | None = None) -> list[dict]:
     """
     Devuelve la lista de documentos, opcionalmente filtrada.
@@ -102,7 +117,7 @@ def get_documentos(filtros: dict | None = None) -> list[dict]:
 
     with get_connection() as conn, get_cursor(conn) as cur:
         cur.execute(sql, params)
-        return cur.fetchall()  # type: ignore[return-value]
+        return [_fix_encoding(r) for r in cur.fetchall()]  # type: ignore[misc]
 
 
 def get_legislaturas() -> list[str]:
@@ -110,8 +125,8 @@ def get_legislaturas() -> list[str]:
     sql = "SELECT DISTINCT legislatura FROM documentos ORDER BY legislatura"
     with get_connection() as conn, get_cursor(conn) as cur:
         cur.execute(sql)
-        rows = cur.fetchall()
-    return [r["legislatura"] for r in rows if r["legislatura"]]  # type: ignore[index]
+        rows = [_fix_encoding(r) for r in cur.fetchall()]
+    return [r["legislatura"] for r in rows if r and r.get("legislatura")]  # type: ignore[index]
 
 
 def get_oradores() -> list[str]:
@@ -119,8 +134,8 @@ def get_oradores() -> list[str]:
     sql = "SELECT DISTINCT orador FROM frases WHERE orador IS NOT NULL ORDER BY orador LIMIT 2000"
     with get_connection() as conn, get_cursor(conn) as cur:
         cur.execute(sql)
-        rows = cur.fetchall()
-    return [r["orador"] for r in rows]  # type: ignore[index]
+        rows = [_fix_encoding(r) for r in cur.fetchall()]
+    return [r["orador"] for r in rows if r and r.get("orador")]  # type: ignore[index]
 
 
 # ── Consultas de ingestión ─────────────────────────────────────────────────────
@@ -146,7 +161,7 @@ def get_frases_por_documento(id_documento: int) -> list[dict]:
     """
     with get_connection() as conn, get_cursor(conn) as cur:
         cur.execute(sql, (id_documento,))
-        return cur.fetchall()  # type: ignore[return-value]
+        return [_fix_encoding(r) for r in cur.fetchall()]  # type: ignore[misc]
 
 
 def get_palabras_por_frase(id_frase: int) -> list[dict]:
@@ -167,7 +182,7 @@ def get_palabras_por_frase(id_frase: int) -> list[dict]:
     """
     with get_connection() as conn, get_cursor(conn) as cur:
         cur.execute(sql, (id_frase,))
-        return cur.fetchall()  # type: ignore[return-value]
+        return [_fix_encoding(r) for r in cur.fetchall()]  # type: ignore[misc]
 
 
 def get_palabras_por_frases_batch(ids_frases: list[int]) -> dict[int, list[dict]]:
@@ -194,7 +209,7 @@ def get_palabras_por_frases_batch(ids_frases: list[int]) -> dict[int, list[dict]
     """
     with get_connection() as conn, get_cursor(conn) as cur:
         cur.execute(sql, ids_frases)
-        rows = cur.fetchall()
+        rows = [_fix_encoding(r) for r in cur.fetchall()]
 
     # Agrupar por idFrase
     result: dict[int, list[dict]] = {}

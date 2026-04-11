@@ -225,7 +225,7 @@ def run_ingestion(
             total_chunks += len(batch)
 
         if verbose:
-            print(f"  → {len(chunks)} chunks generados (total acumulado: {total_chunks})")
+            print(f"  -> {len(chunks)} chunks generados (total acumulado: {total_chunks})")
 
     print(f"\n[Ingestion] Completado. {total_chunks} chunks en ChromaDB.")
     return total_chunks

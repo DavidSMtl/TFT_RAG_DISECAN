@@ -13,10 +13,8 @@ from functools import lru_cache
 
 from sentence_transformers import SentenceTransformer
 
-# ── Configuración ──────────────────────────────────────────────────────────────
-
 MODEL_NAME = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
-BATCH_SIZE = 64  # Ajustar según VRAM/RAM disponible
+BATCH_SIZE = 64
 
 
 @lru_cache(maxsize=1)
@@ -26,9 +24,6 @@ def _load_model() -> SentenceTransformer:
     model = SentenceTransformer(MODEL_NAME)
     print("[Embedder] Modelo cargado.")
     return model
-
-
-# ── API pública ────────────────────────────────────────────────────────────────
 
 
 def embed_passages(texts: list[str]) -> list[list[float]]:

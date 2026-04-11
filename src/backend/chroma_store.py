@@ -1,5 +1,5 @@
 """
-chroma_store.py — Wrapper de ChromaDB para el Vector Store de DiSeCan.
+chroma_store.py: Wrapper de ChromaDB para el Vector Store
 
 Gestiona la colección de chunks con sus embeddings y metadatos.
 ChromaDB se persiste en disco (CHROMA_PATH del .env).
@@ -48,7 +48,7 @@ def upsert_chunks(
 ) -> None:
     """
     Inserta o actualiza chunks en la colección.
-    Usa upsert para que sea idempotente (se puede re-ejecutar sin duplicados).
+    Usa upsert para que se pueda ejecutar sin duplicados.
 
     Args:
         ids        : identificadores únicos (UUID string)
