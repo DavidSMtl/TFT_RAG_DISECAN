@@ -1,0 +1,298 @@
+\documentclass[oneside,12pt]{book}
+\usepackage[utf8]{inputenc}
+\usepackage{standalone}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{lmodern}
+\usepackage{float}
+\usepackage[spanish]{babel}
+\usepackage{csquotes}
+\usepackage[figurename=Ilustración]{caption}
+\usepackage[numbers]{natbib}
+\usepackage{ragged2e}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{parskip}
+\usepackage{listings}
+\usepackage{epigraph}
+\usepackage{lipsum} % Texto de relleno en plantilla
+% \usepackage{svg} % Ya no se usa, convertido a pdf directos
+
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{filecontents} % Para incluir la bibliografía en este mismo archivo
+
+% --- BIBLIOGRAFÍA ---
+\begin{filecontents}{ref.bib}
+@misc{disecan2026,
+  author = {IATEXT ULPGC},
+  title = {Buscador Textual DiSeCan del Parlamento de Canarias},
+  year = {2026},
+  url = {https://iatext.ulpgc.es/es/aplicaciones/buscador-textual}
+}
+
+@article{robertson2009probabilistic,
+  title={The probabilistic relevance framework: BM25 and beyond},
+  author={Robertson, Stephen and Zaragoza, Hugo and others},
+  journal={Foundations and Trends{\textregistered} in Information Retrieval},
+  volume={3},
+  number={4},
+  pages={333--389},
+  year={2009},
+  publisher={Now Publishers, Inc.}
+}
+
+@inproceedings{cormack2009reciprocal,
+  title={Reciprocal rank fusion outperforms condorcet and individual rank learning methods},
+  author={Cormack, Gordon V and Clarke, Charles LA and Buettcher, Stefan},
+  booktitle={Proceedings of the 32nd international ACM SIGIR conference on Research and development in information retrieval},
+  pages={758--759},
+  year={2009}
+}
+
+@misc{chromadb2025,
+  author = {Chroma Inc.},
+  title = {Chroma: The AI-native open-source vector database},
+  year = {2025},
+  url = {https://www.trychroma.com/}
+}
+
+@article{wang2022text,
+  title={Text embeddings by weakly-supervised contrastive pre-training},
+  author={Wang, Liang and Yang, Nan and Huang, Xiaolong and Jiao, Binxing and Ding, Linjun and Jiang, Daxin and Yan, Rui and Wei, Furu},
+  journal={arXiv preprint arXiv:2212.03533},
+  year={2022}
+}
+
+@article{bonifacio2021mmarco,
+  title={mMARCO: A multilingual version of the MS MARCO passage ranking dataset},
+  author={Bonifacio, Luiz and Jeronymo, Vitor and Ribeiro, Hugo Queiroz and Lotufo, Roberto and Nogueira, Rodrigo},
+  journal={arXiv preprint arXiv:2108.13897},
+  year={2021}
+}
+\end{filecontents}
+% --------------------
+
+% Glosario de términos - BEGIN
+\usepackage{glossaries}
+
+\makeglossaries
+
+\newglossaryentry{rag}
+{
+    name=RAG,
+    description={Retrieval-Augmented Generation. Arquitectura que mejora las respuestas de un modelo de lenguaje apoyándose en bases de datos externas}
+}
+
+\newglossaryentry{vllm}
+{
+    name=vLLM,
+    description={Servidor de inferencia de alta eficiencia para Modelos de Lenguaje de Gran Escala}
+}
+
+\newacronym{iatext}{IATEXT}{Instituto Universitario de Análisis y Aplicaciones Textuales}
+
+\newacronym{disecan}{DiSeCan}{Buscador de los Diarios de Sesiones de Canarias}
+
+\newacronym{iagen}{IAGen}{Inteligencia Artificial Generativa}
+
+\newacronym{llm}{LLM}{Large Language Model (Gran Modelo de Lenguaje)}
+
+\newacronym{sql}{SQL}{Structured Query Language}
+
+\newacronym{ods}{ODS}{Objetivos de Desarrollo Sostenible}
+
+\newacronym{crisp-dm}{CRISP-DM}{Cross-Industry Standard Process for Data Mining}
+
+\newglossaryentry{bm25}
+{
+    name=BM25,
+    description={Best Matching 25. Algoritmo de recuperación de información basado en term frequency-inverse document frequency (TF-IDF)}
+}
+
+\newglossaryentry{rrf}
+{
+    name=RRF,
+    description={Reciprocal Rank Fusion. Técnica empírica que combina los resultados de la búsqueda léxica y semántica para generar un ranking unificado de mayor calidad}
+}
+
+\newglossaryentry{crossencoder}
+{
+    name=Cross-Encoder,
+    description={Arquitectura basada en Transformers que procesa simultáneamente una consulta y un documento para predecir con alta precisión su grado de relevancia}
+}
+
+\newglossaryentry{chromadb}
+{
+    name=ChromaDB,
+    description={Base de datos vectorial \textit{open-source} empleada para el almacenamiento y búsqueda semántica de \textit{embeddings}}
+}
+
+% Glosario de términos - END
+
+%\usepackage{fancyhdr}
+\usepackage{color}
+\usepackage{graphicx,xcolor}
+
+\renewcommand{\lstlistingname}{Algoritmo}
+\floatname{algorithm}{Algoritmo}
+\renewcommand{\listalgorithmname}{Índice de~\lstlistingname s}
+
+\lstset{
+        basicstyle=\fontsize{7}{11}\ttfamily,
+        language=Python,
+        captionpos=b,
+}
+
+\usepackage{titlesec}
+\setcounter{secnumdepth}{3}
+\titleformat{\chapter}[display]
+{\normalfont\huge\bfseries}{\chaptertitlename\ \thechapter}{20pt}{\Huge}
+
+\urlstyle{same}
+\title{Implementación de un sistema de consulta con Inteligencia Artificial sobre un gran
+número de documentos}
+\author{David Suárez Martel}
+\date{Curso 2025 - 2026}
+\renewcommand{\contentsname}{Contenido}
+\renewcommand{\figurename}{}
+\usepackage{pifont}
+\renewcommand\labelitemi{\ding{52}}
+
+\begin{document}
+
+\input{Portada.tex}
+
+\input{TFT04C.tex}
+
+\newpage
+\pagenumbering{roman}
+
+\input{Agradecimientos.tex}
+
+\clearpage
+\input{Resumen.tex}
+\tableofcontents
+
+\listofalgorithms 
+
+\listoffigures
+
+\listoftables
+
+
+\clearpage
+\pagenumbering{arabic}
+
+\chapter{Introducción}
+\input{Introduccion.tex}
+
+\chapter{Estado actual y objetivos iniciales}
+%\input{EstadoDelArte.tex}
+% REVISADO HASTA AQUÍ
+\section{Motivación y antecedentes}
+Actualmente, el corpus del Parlamento de Canarias supera las 71.000 páginas de transcripciones. La recuperación tradicional presenta desafíos técnicos, ya que la búsqueda de términos aislados ignora a menudo la intención semántica del usuario. Surge así la necesidad de sistemas que combinen la precisión de los filtros SQL (por diputado, fecha o legislatura) con la comprensión conceptual de los vectores de alta dimensionalidad.
+
+\section{Objetivos}
+En la propuesta inicial del TFT se plantearon los siguientes objetivos principales:
+\begin{itemize}
+    \item \textbf{Implementación de Búsqueda Híbrida:} Integrar técnicas de recuperación relacional (SQL) con recuperación semántica vectorial.
+    \item \textbf{Estructuración mediante Metadatos:} Diseñar un chunking consciente del contexto que evite la fragmentación arbitraria de las intervenciones.
+    \item \textbf{Despliegue On-Premise:} Configurar un entorno local eficiente mediante contenedores y \gls{vllm} para ejecutar modelos de lenguaje a gran escala sin comprometer la privacidad institucional.
+\end{itemize}
+
+\chapter{Aportaciones del trabajo}
+\chaptermark{Competencias, aportaciones y ODS}
+%\input{Competencias.tex}
+
+\section{Principales aportaciones}
+Este TFT aporta al entorno socio-económico canario una herramienta de vanguardia para la democratización de la información legislativa. A nivel técnico, demuestra la viabilidad de implementar arquitecturas Context-Aware RAG en infraestructuras locales del IATEXT, mitigando las alucinaciones de los modelos genéricos mediante el anclaje estricto en fuentes oficiales.
+
+\section{Competencias específicas}
+Este trabajo cubre de forma directa las siguientes competencias específicas del Grado en Ingeniería Informática:
+\begin{itemize}
+    \item \textbf{CI15:} Conocimiento y aplicación de los principios fundamentales y técnicas básicas de los sistemas inteligentes. Se cubre mediante la orquestación del motor LLM y la búsqueda semántica vectorial.
+    \item \textbf{CI13:} Herramientas para el almacenamiento, procesamiento y acceso a sistemas de información. Cubierto a través de la integración de bases de datos relacionales (SQL) y su estructuración para el sistema RAG.
+    \item \textbf{CI7:} Conocimiento y utilización eficiente de tipos y estructuras de datos. Evidenciado en la lógica de indexación híbrida y chunking por metadatos.
+\end{itemize}
+
+\section{Alineamiento con los objetivos de desarrollo sostenible}
+
+\begin{table}[!htbp]
+\caption{Grado de relación del TFT con los objetivos de desarrollo sostenible.}
+\label{tab:ODS}
+\centering
+\begin{tabular}{|l|c|c|c|c|}
+\cline{1-5}
+  & \multicolumn{4}{c|}{Grado de relación} \\ \cline{2-5} 
+ ODS & 0 & 1 & 2 & 3 \\
+  & No procede & Bajo & Medio & Alto \\  
+  \cline{1-5} 
+1 Fin de la Pobreza & X & & & \\ \cline{1-5}
+2 Hambre cero & X & & & \\ \cline{1-5}
+3 Salud y Bienestar & X & & & \\ \cline{1-5}
+4 Educación de calidad & & X & & \\ \cline{1-5}
+5 Igualdad de género & X & & & \\ \cline{1-5}
+6 Agua limpia y saneamiento & X & & & \\ \cline{1-5}
+7 Energía Asequible y no contaminante & X & & & \\ \cline{1-5}
+8 Trabajo decente y crecimiento económico & X & & & \\ \cline{1-5}
+9 Industria, Innovación e Infraestructuras & & & & X \\ \cline{1-5}
+10 Reducción de las desigualdades & X & & & \\ \cline{1-5}
+11 Ciudades y comunidades sostenibles & X & & & \\ \cline{1-5}
+12 Producción y consumo sostenibles & X & & & \\ \cline{1-5} 
+13 Acción por el clima & X & & & \\ \cline{1-5}
+14 Vida submarina & X & & & \\ \cline{1-5}
+15 Vida de ecosistemas terrestres & X & & & \\ \cline{1-5}
+16 Paz, justicia e instituciones sólidas & & & & X \\ \cline{1-5}
+17 Alianzas para lograr objetivos & & X & & \\ \cline{1-5}
+\end{tabular}%
+\end{table}
+
+El proyecto presenta un alineamiento Alto (3) con el ODS 9 (desarrollo de infraestructuras tecnológicas innovadoras de información) y con el ODS 16, dado que la modernización del acceso a los Diarios de Sesiones promueve activamente la transparencia, la rendición de cuentas y el fortalecimiento del Parlamento como institución democrática.
+
+\chapter{Desarrollo}
+%\input{Desarrollo.tex}
+
+\section{Metodología}
+El proyecto se desarrolla siguiendo la metodología \textbf{CRISP-DM} (Cross-Industry Standard Process for Data Mining), adaptada al ciclo de vida de los sistemas de Inteligencia Artificial Generativa. Se ha elegido por su robustez en la fase inicial de comprensión y preparación de datos, un paso crítico al trabajar con la complejidad estructural de las actas parlamentarias.
+
+\section{Fases de desarrollo}
+La arquitectura se implementa de manera modular:
+\begin{enumerate}
+    \item \textbf{Ingesta Inteligente (SQL-First):} Se procede a la extracción de las bases de datos relacionales existentes, utilizando los metadatos (orador, fecha) para realizar una fragmentación recursiva que respeta el flujo natural de las intervenciones.
+    \item \textbf{Motor RAG Híbrido:} Uso del framework LlamaIndex para procesar y enrutar las consultas. La pregunta del usuario se descompone en filtros deterministas (SQL) y búsquedas semánticas (Vectores).
+    \item \textbf{Inferencia Local:} Configuración de un entorno con el servidor \gls{vllm} empleando la técnica PagedAttention para gestionar eficientemente la memoria VRAM y procesar ventanas de contexto extensas con modelos específicos del dominio legal.
+\end{enumerate}
+
+\input{Implementacion.tex}
+
+\chapter{Resultados}
+%\input{Resultados.tex}
+
+Presentación de los resultados del trabajo. (Esta sección será desarrollada tras la ejecución de las pruebas experimentales, incluyendo la evaluación de métricas de Faithfulness y Answer Relevancy).
+
+\chapter{Conclusiones y trabajo futuro}
+%\input{Conclusiones.tex}
+
+\section{Conclusiones}
+El diseño arquitectónico propuesto demuestra que es técnica y logísticamente viable modernizar las herramientas de consulta del Parlamento de Canarias sin comprometer la privacidad de los datos mediante el uso de APIs externas.
+
+\section{Trabajo futuro}
+Como vías de extensión, se plantea la transición hacia un paradigma Table-Augmented Generation (TAG), permitiendo al sistema RAG razonar no solo sobre los textos de las intervenciones, sino ejecutar comparativas complejas sobre datos tabulares de votaciones y presupuestos a lo largo de las distintas legislaturas.
+
+\section{Uso de la IA}
+En cumplimiento de la normativa académica, se declara que para la ideación de la arquitectura híbrida y la estructuración del código LaTeX de la presente memoria, se ha empleado la asistencia de modelos de lenguaje generativos (Gemini y Claude) operando en entornos como Google Antigravity. Estas herramientas han actuado exclusivamente como soporte a la planificación, siendo el autor humano el responsable íntegro del diseño lógico, validación y ejecución del Trabajo de Fin de Grado.
+
+\chapter{Otros capítulos y anexos}
+
+\section{Normativa y Legislación}
+El desarrollo del sistema en modo \textit{on-premise} (servidores locales de la ULPGC) responde directamente a las exigencias del \textbf{Reglamento Europeo de Inteligencia Artificial (AI Act)}. Al tratarse de un sistema orientado a la administración pública y datos institucionales, la arquitectura propuesta asegura la trazabilidad total de las fuentes y previene la fuga de información hacia infraestructuras en la nube de terceros.
+
+\bibliography{ref}
+\bibliographystyle{apalike}
+\clearpage
+
+\printglossaries
+
+\end{document}
