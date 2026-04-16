@@ -49,6 +49,7 @@ class Chunk:
     id_frase_inicio: int
     id_frase_fin: int
     num_frases: int
+    pdf_file: str = ""   # Nombre del fichero PDF original
     chunk_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def to_metadata(self) -> dict:
@@ -61,6 +62,7 @@ class Chunk:
             "id_frase_inicio": self.id_frase_inicio,
             "id_frase_fin": self.id_frase_fin,
             "num_frases": self.num_frases,
+            "pdf_file": self.pdf_file
         }
 
 
@@ -143,6 +145,7 @@ def _chunks_de_documento(doc: dict, frases: list[dict], palabras_por_frase: dict
                 id_frase_inicio=frases_turno[0]["idFrases"],
                 id_frase_fin=frases_turno[-1]["idFrases"],
                 num_frases=len(frases_turno),
+                pdf_file=doc.get("nombreFicheroPDF", "")
             )
         )
 

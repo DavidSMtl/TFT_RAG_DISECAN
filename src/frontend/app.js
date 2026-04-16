@@ -34,17 +34,22 @@ function addBotMessage(answer, sources) {
 
     let sourcesHtml = "";
     if (sources && sources.length > 0) {
-        const s = sources[0]; // mostramos la primera fuente
+        let fragmentsHtml = sources.map((s, index) => `
+            <div class="source-item">
+                <div class="source-fragment"><strong>[Fuente ${index + 1}]</strong> <em>${s.speaker}:</em> "${s.fragment}"</div>
+                <div class="source-meta">
+                    Fecha: ${s.date} · Legislatura: ${s.legislature} ·
+                    <a href="${s.pdf_url}" target="_blank">📄 Ver PDF Original</a>
+                </div>
+            </div>
+        `).join("");
+
         sourcesHtml = `
             <button class="sources-btn" onclick="this.nextElementSibling.classList.toggle('open')">
-                Ver Fuentes Oficiales (Diario de Sesiones)
+                Ver Fuentes Oficiales (${sources.length})
             </button>
             <div class="sources-content">
-                <div class="source-fragment">Fragmento: ${s.fragment}</div>
-                <div class="source-meta">
-                    Orador: ${s.speaker} · Fecha: ${s.date} · Legislatura: ${s.legislature} ·
-                    <a href="${s.pdf_url}" target="_blank">Ver PDF Original</a>
-                </div>
+                ${fragmentsHtml}
             </div>
         `;
     }
@@ -52,7 +57,7 @@ function addBotMessage(answer, sources) {
     const div = document.createElement("div");
     div.className = "msg";
     div.innerHTML = `
-        <div class="msg-avatar bot"></div>
+        <div class="msg-avatar bot">🤖</div>
         <div class="msg-bubble bot">
             <p>${answer}</p>
             ${sourcesHtml}

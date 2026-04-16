@@ -12,6 +12,7 @@ from llama_index.core import (
     StorageContext,
     VectorStoreIndex,
     get_response_synthesizer,
+    PromptTemplate,
 )
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.core.query_engine import RetrieverQueryEngine
@@ -62,6 +63,22 @@ def setup_settings():
     Settings.llm = Ollama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, request_timeout=300.0)
     Settings.chunk_size = 1024
 
+# ── Prompts ────────────────────────────────────────────────────────────────
+
+QA_PROMPT_STR = (
+    "Contexto extraído del Diario de Sesiones del Parlamento de Canarias:\n"
+    "---------------------\n"
+    "{context_str}\n"
+    "---------------------\n"
+    "Dada la información anterior, responde a la siguiente pregunta: {query_str}\n"
+    "Instrucciones:\n"
+    "1. Responde siempre en ESPAÑOL.\n"
+    "2. Si la respuesta no está en el contexto, di simplemente 'Lo siento, no he encontrado información detallada sobre ese tema en el Diario de Sesiones'.\n"
+    "3. Sé preciso y cita oradores si están disponibles.\n"
+    "Respuesta:"
+)
+QA_PROMPT = PromptTemplate(QA_PROMPT_STR)
+
 def get_query_engine(filtros: dict | None = None):
     """Construye y devuelve el motor de consulta RAG asíncrono."""
     setup_settings()
@@ -83,6 +100,9 @@ def get_query_engine(filtros: dict | None = None):
         node_postprocessors=[] # Eliminamos el filtro de 0.5 para ver resultados
     )
     
+    # Aplicar el prompt en español
+    query_engine.update_prompts({"response_synthesizer:text_qa_template": QA_PROMPT})
+    
     return query_engine
 
 async def ask_disecan(query: str, filtros: dict | None = None):
@@ -98,12 +118,19 @@ async def ask_disecan(query: str, filtros: dict | None = None):
     for node in response.source_nodes:
         meta = node.metadata
         print(f"  - Fragmento de {meta.get('orador')} (Score: {node.score:.4f})")
+        
+        # Generar URL del PDF (Simulado basado en legislatura y nombre de fichero)
+        leg = meta.get("legislatura", "X")
+        pdf_name = meta.get("pdf_file", "")
+        # URL base típica del Parlamento de Canarias (ajustar si es necesario)
+        pdf_url = f"https://www.parcan.es/publicaciones/diarios/{leg}/{pdf_name}" if pdf_name else "#"
+
         sources.append({
             "fragment": node.get_content(),
             "speaker": meta.get("orador", "Desconocido"),
             "date": meta.get("fecha", ""),
-            "legislature": meta.get("legislatura", ""),
-            "pdf_url": "#",
+            "legislature": leg,
+            "pdf_url": pdf_url,
             "score": float(node.score or 0.0)
         })
         
