@@ -38,18 +38,13 @@ def health():
     return jsonify({"status": "ok", "timestamp": time.time()})
 
 
+import asyncio
+from backend.orchestrator import ask_disecan
+
 @app.post("/api/chat")
 def chat():
     """
-    Endpoint principal del chatbot.
-
-    Request body (JSON):
-        query   : str   — pregunta del usuario
-        filters : dict  — filtros de búsqueda (legislatura, orador, sesión, fecha)
-
-    Response (JSON):
-        answer  : str        — respuesta generada
-        sources : list[dict] — fragmentos del Diario de Sesiones usados como contexto
+    Endpoint principal del chatbot (Síncrono para evitar problemas de dependencias).
     """
     data = request.get_json(silent=True) or {}
     query: str = data.get("query", "").strip()
@@ -58,35 +53,15 @@ def chat():
     if not query:
         return jsonify({"error": "El campo 'query' es obligatorio."}), 400
 
-    # ── TODO: sustituir por llamada real a LlamaIndex ──────────────────────
-    answer, sources = _mock_rag(query, filters)
-    # ──────────────────────────────────────────────────────────────────────
-
-    return jsonify({"answer": answer, "sources": sources})
-
-
-# ── Mock RAG (placeholder hasta integrar LlamaIndex) ──────────────────────
-def _mock_rag(query: str, filters: dict) -> tuple[str, list[dict]]:
-    """Devuelve una respuesta simulada para probar el frontend end-to-end."""
-    answer = (
-        f"[Respuesta mock para: «{query}»] "
-        "Según el Diario de Sesiones, el Diputado X propuso una enmienda "
-        "para aumentar las ayudas al alquiler en el marco del debate "
-        "sobre política de vivienda urgente."
-    )
-    sources = [
-        {
-            "fragment": (
-                "«...es imperativo que este Parlamento apruebe el decreto "
-                "de vivienda urgente antes del próximo período de sesiones...»"
-            ),
-            "speaker": "Diputado X",
-            "date": "12/01/2024",
-            "legislature": filters.get("legislatura", "X Legislatura"),
-            "pdf_url": "#",
-        }
-    ]
-    return answer, sources
+    try:
+        # ── Ejecución de la lógica asíncrona en un entorno síncrono ──────
+        # Creamos un nuevo loop si es necesario o usamos asyncio.run
+        answer, sources = asyncio.run(ask_disecan(query, filters))
+        # ──────────────────────────────────────────────────────────────────
+        return jsonify({"answer": answer, "sources": sources})
+    except Exception as e:
+        app.logger.error(f"Error en RAG: {e}")
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
 
 # ── Punto de entrada ───────────────────────────────────────────────────────

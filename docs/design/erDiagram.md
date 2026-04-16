@@ -3,18 +3,20 @@
   init: {
     'theme': 'base',
     'themeVariables': {
-      'primaryColor': '#e8f0fb',
-      'primaryBorderColor': '#1a56a4',
-      'primaryTextColor': '#1a1d23',
-      'lineColor': '#1a56a4'
+      'primaryColor': '#e0f2fe',
+      'primaryBorderColor': '#0284c7',
+      'primaryTextColor': '#0f172a',
+      'lineColor': '#64748b',
+      'attributeBackgroundColorEven': '#f0f9ff',
+      'attributeBackgroundColorOdd': '#ffffff',
+      'fontSize': '18px'
     }
   }
 }%%
 erDiagram
-    %% BLOQUE 1: METADATOS HEREDADOS (DiSeCan / IATEXT)
+    %% BLOQUE 1: BASE DE DATOS FÍSICA (MySQL DiSeCan)
     DOCUMENTOS {
         int idDocumento PK
-        varchar nombreFicheroPDF
         varchar legislatura
         date fecha
         int numSesion
@@ -23,39 +25,38 @@ erDiagram
 
     FRASES {
         int idFrases PK
+        int idDocumento FK
         varchar orador
         int ByteInicioFrase
         int ByteLongFrase
-        int idDocumento FK
     }
 
     PALABRAS {
+        int idFrase FK
         varchar palabra
         varchar lema
-        int categoria
         smallint posElementoFrase
-        int idFrase FK
+        int categoria
     }
 
-    %% BLOQUE 2: NUEVA CAPA DE CONTEXTO Y RAG (Tu aportación)
+    %% BLOQUE 2: ECOSISTEMA RAG (Lógico y ChromaDB)
     CHUNKS_TEXTO {
         string idChunk PK "UUID"
-        int idFraseOriginal FK
-        text contenidoTexto "Párrafo natural reconstruido"
-        int tokenCount "Control de longitud para LLM"
+        int idFrase FK "Puntero al MySQL"
+        text parrafo_reconstruido "Concat(palabras) ordenadas"
     }
 
-    VECTORES_EMBEDDING {
-        string idVector PK "Vinculado a idChunk"
-        vector embedding "Array flotante de 768/1024 dims"
-        string modelo_usado "Ej: ROBERTalex"
+    VECTORES_CHROMA {
+        string idVector PK
+        string idChunk FK
+        vector embedding_array "Vector multidimensional"
     }
 
-    %% RELACIONES
+    %% RELACIONES DEL ESQUEMA
     DOCUMENTOS ||--o{ FRASES : "contiene"
     FRASES ||--o{ PALABRAS : "se desglosa en"
     
-    %% El puente entre el mundo relacional y el semántico
-    FRASES ||--o| CHUNKS_TEXTO : "se reconstruye en"
-    CHUNKS_TEXTO ||--|| VECTORES_EMBEDDING : "se representa matemáticamente (Vector DB)"
+    %% PUENTE ENTRE MYSQL Y RAG
+    FRASES ||--o| CHUNKS_TEXTO : "Script Python reconstruye"
+    CHUNKS_TEXTO ||--|| VECTORES_CHROMA : "Se almacena semánticamente en"
 ```

@@ -3,56 +3,57 @@
   init: {
     'theme': 'base',
     'themeVariables': {
-      'primaryColor': '#1a56a4',
-      'primaryTextColor': '#fff',
-      'primaryBorderColor': '#1344a0',
-      'lineColor': '#8b92a5',
-      'actorBkg': '#f4b942',
-      'actorBorder': '#d49922',
-      'actorTextColor': '#1a1d23',
-      'noteBkgColor': '#e8f0fb',
-      'noteBorderColor': '#1a56a4',
-      'noteTextColor': '#1a1d23',
-      'messageTextColor': '#1a1d23',
-      'textColor': '#1a1d23'
+      'primaryColor': '#ffffff',
+      'primaryBorderColor': '#94a3b8',
+      'primaryTextColor': '#0f172a',
+      'lineColor': '#64748b',
+      'actorBkg': '#dcfce7',
+      'actorBorder': '#16a34a',
+      'noteBkgColor': '#ffedd5',
+      'noteBorderColor': '#ea580c',
+      'noteTextColor': '#0f172a',
+      'messageTextColor': '#0f172a',
+      'fontSize': '20px',
+      'actorFontSize': '22px',
+      'noteFontSize': '18px',
+      'messageFontSize': '18px'
     }
   }
 }%%
 sequenceDiagram
     autonumber
     actor U as Usuario
-    participant UI as Frontend (HTML/JS)
     participant API as Backend (Flask)
-    participant LI as LlamaIndex (Orquestador)
-    participant SQL as MySQL (Metadatos)
-    participant VDB as ChromaDB (Vectores)
-    participant LLM as Modelo IA (vLLM)
+    participant LI as LlamaIndex
+    participant SQL as MySQL (DiSeCan)
+    participant VDB as ChromaDB
+    participant LLM as vLLM
 
-    U->>UI: Introduce pregunta + Selecciona filtros
-    UI->>API: POST /api/chat (query, filtros)
-    API->>LI: Iniciar pipeline de consulta RAG
+    U->>API: 1. POST /chat (query, filtros)
+    API->>LI: 2. Inicia Ensemble Retriever
     
-    rect rgb(232, 240, 251)
-        Note right of LI: 1. Fase de Filtrado Exacto
-        LI->>SQL: Ejecutar consulta SELECT (WHERE orador, fecha...)
-        SQL-->>LI: Devuelve IDs de los Chunks válidos
+    rect rgb(224, 242, 254)
+        Note right of LI: Búsqueda Híbrida Paralela
+        par Léxica
+            LI->>SQL: Busca término exacto/lema
+            SQL-->>LI: Resultados precisos
+        and Semántica
+            LI->>VDB: Busca similitud vectorial
+            VDB-->>LI: Resultados contextuales
+        end
     end
 
-    rect rgb(220, 235, 255)
-        Note right of LI: 2. Fase de Búsqueda Semántica
-        LI->>VDB: Buscar similitud vectorial (Top-K)
-        Note over LI, VDB: Aplicando filtro de IDs obtenidos del SQL
-        VDB-->>LI: Devuelve Chunks de texto relevantes
+    rect rgb(255, 237, 213)
+        Note right of LI: RRF (Reciprocal Rank Fusion)
+        LI->>LI: Combina y reordena resultados
     end
 
-    rect rgb(210, 225, 250)
-        Note right of LI: 3. Fase de Generación (Grounded)
-        LI->>LI: Construir Prompt (System Prompt + Chunks + Pregunta)
-        LI->>LLM: Inferencia (Prompt final)
-        LLM-->>LI: Respuesta generada en lenguaje natural
+    rect rgb(243, 232, 255)
+        Note right of LI: Generación
+        LI->>LLM: Prompt (Contexto + Pregunta)
+        LLM-->>LI: Respuesta natural
     end
 
-    LI-->>API: Respuesta + Referencias (Metadatos de fuentes)
-    API-->>UI: JSON (texto_respuesta, array_fuentes)
-    UI-->>U: Muestra chat renderizado + Desplegable de actas
+    LI-->>API: Respuesta + Metadatos origen
+    API-->>U: Muestra chat y actas referenciadas
 ```

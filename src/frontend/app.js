@@ -92,9 +92,15 @@ async function sendMessage(event) {
 
         const data = await response.json();
         loadingDiv.remove();
-        addBotMessage(data.answer, data.sources);
+
+        if (data.error) {
+            addMessage(` ${data.error}`, "bot");
+        } else {
+            addBotMessage(data.answer, data.sources);
+        }
 
     } catch (error) {
-        loadingDiv.querySelector(".msg-bubble").textContent = "Error al conectar con el servidor.";
+        loadingDiv.querySelector(".msg-bubble").textContent = "Error al procesar la consulta.";
+        console.error("Chat Error:", error);
     }
 }
