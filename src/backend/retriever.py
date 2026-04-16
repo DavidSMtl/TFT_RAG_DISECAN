@@ -19,17 +19,15 @@ from llama_index.core.retrievers import (
 from llama_index.retrievers.bm25 import BM25Retriever
 from llama_index.core.schema import NodeWithScore
 
+from llama_index.core.schema import TextNode
+from backend.chroma_store import get_all_chunks
+
 def get_ensemble_retriever(index: VectorStoreIndex, filtros: dict | None = None) -> BaseRetriever:
     """
     Crea un QueryFusionRetriever que combina la búsqueda semántica y léxica.
-    
-    Args:
-        index   : Índice de LlamaIndex vinculado a ChromaDB.
-        filtros : Filtros de metadatos (opcional).
     """
     
-    # 1. Rama Semántica
-    # Aplicamos filtros de metadatos si vienen (LlamaIndex los traduce a Chroma where)
+    # 1. Rama Semántica (Consulta directa a Chroma)
     vector_retriever = VectorIndexRetriever(
         index=index,
         similarity_top_k=20,
@@ -37,22 +35,34 @@ def get_ensemble_retriever(index: VectorStoreIndex, filtros: dict | None = None)
     )
     
     # 2. Rama Léxica (BM25)
-    # Nota: LlamaIndex BM25Retriever construye el índice desde los nodos del index
-    # Esto es ideal porque ya tenemos los párrafos en el índice.
+    # IMPORTANTE: Al cargar desde Chroma persistente, el index no tiene los nodos en memoria.
+    # Tenemos que recuperarlos para construir el índice BM25.
+    print("[Retriever] Recuperando documentos para el índice BM25...")
+    chunks = get_all_chunks()
+    nodes = [
+        TextNode(text=c["document"], id_=c["id"], metadata=c["metadata"]) 
+        for c in chunks
+    ]
+    
+    if not nodes:
+        print("[Retriever] ADVERTENCIA: No hay documentos para BM25. Usando solo rama semántica.")
+        return vector_retriever
+
     lexical_retriever = BM25Retriever.from_defaults(
-        index=index,
+        nodes=nodes,
         similarity_top_k=20,
     )
     
     # 3. Fusión por RRF (Reciprocal Rank Fusion)
-    # LlamaIndex maneja la ejecución en paralelo y la fusión de forma nativa
+    print(f"[Retriever] Ejecutando búsqueda híbrida (Semántica + BM25) para top_k=10...")
+    
     ensemble_retriever = QueryFusionRetriever(
         [vector_retriever, lexical_retriever],
         similarity_top_k=10,
-        num_queries=1,  # Solo la query original, sin parafraseo
-        mode="reciprocal_rerank", # RRF
+        num_queries=1,
+        mode="reciprocal_rerank",
         use_async=True,
-        verbose=True
+        verbose=True  # Activamos el verbose de LlamaIndex para más info
     )
     
     return ensemble_retriever

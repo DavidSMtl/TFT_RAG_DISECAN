@@ -66,4 +66,5 @@ def chat():
 
 # ── Punto de entrada ───────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app.run(debug=True, host="127.0.0.1", port=5000)
+    # Desactivamos use_reloader para evitar bucles de reinicio en Windows con tiktoken/llama-index
+    app.run(debug=True, host="127.0.0.1", port=5000, use_reloader=False)
