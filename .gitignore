@@ -20,3 +20,9 @@ database/init/DumpDiSeCan.sql
 database/init/*.sql
 database/init/*.sql.gz
 database/init/DumpDiSeCanEstructura.sql
+
+# DB Samples
+database/sample/
+database/sample.sql
+
+BuscadorCongreso/

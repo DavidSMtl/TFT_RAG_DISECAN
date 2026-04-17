@@ -28,65 +28,78 @@ def _escape(val: object) -> str:
         return "NULL"
     if isinstance(val, (int, float)):
         return str(val)
-    # Para strings y dates: escapar comillas simples
+    # Manejar bytes (puede ocurrir con columnas binarias o encoding mixto)
+    if isinstance(val, (bytes, bytearray)):
+        try:
+            val = val.decode("utf-8")
+        except Exception:
+            try:
+                val = val.decode("cp1252")
+            except Exception:
+                return "NULL"  # Valor irrecuperable, mejor NULL que datos corruptos
+    # Para strings y dates: escapar comillas simples y barras
     return "'" + str(val).replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
 def create_sample(num_docs: int, output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
 
+    # ── 1. Documentos ──────────────────────────────────────────────────────
     with get_connection() as conn, get_cursor(conn) as cur:
-
-        # 1. Seleccionar documentos de muestra (distribuidos: primero y últimos)
         cur.execute(
             "SELECT * FROM documentos ORDER BY fecha ASC LIMIT %s",
             (num_docs,),
         )
         docs = cur.fetchall()
-        if not docs:
-            print("[ERROR] No hay documentos en la BD. ¿Está el dump importado?")
-            sys.exit(1)
 
-        doc_ids = [d["idDocumento"] for d in docs]
-        placeholders = ", ".join(["%s"] * len(doc_ids))
+    if not docs:
+        print("[ERROR] No hay documentos en la BD. ¿Está el dump importado?")
+        sys.exit(1)
 
-        # 2. Frases de esos documentos
+    doc_ids = [d["idDocumento"] for d in docs]
+    placeholders = ", ".join(["%s"] * len(doc_ids))
+
+    # ── 2. Frases de esos documentos ───────────────────────────────────────
+    with get_connection() as conn, get_cursor(conn) as cur:
         cur.execute(
             f"SELECT * FROM frases WHERE idDocumento IN ({placeholders}) ORDER BY idFrases",
             doc_ids,
         )
         frases = cur.fetchall()
-        frase_ids = [f["idFrases"] for f in frases]
-        print(f"  Documentos: {len(docs)}, Frases: {len(frases)}")
 
-        # 3. Palabras de esas frases (en batches para no saturar la query)
-        palabras: list[dict] = []
-        BATCH = 500
-        for i in range(0, len(frase_ids), BATCH):
-            batch_ids = frase_ids[i : i + BATCH]
-            ph = ", ".join(["%s"] * len(batch_ids))
+    frase_ids = [f["idFrases"] for f in frases]
+    print(f"  Documentos: {len(docs)}, Frases: {len(frases)}")
+
+    # ── 3. Palabras de esas frases (en batches) ────────────────────────────
+    palabras: list[dict] = []
+    BATCH = 5000
+    for i in range(0, len(frase_ids), BATCH):
+        batch_ids = frase_ids[i : i + BATCH]
+        ph = ", ".join(["%s"] * len(batch_ids))
+        with get_connection() as conn, get_cursor(conn) as cur:
             cur.execute(
                 f"SELECT * FROM palabras WHERE idFrase IN ({ph}) ORDER BY idFrase, posElementoFrase",
                 batch_ids,
             )
             palabras.extend(cur.fetchall())
-        print(f"  Palabras: {len(palabras)}")
+    print(f"  Palabras: {len(palabras)}")
 
-        # 4. Usuarios referenciados en frases (revisada/metafora) — tabla opcional
-        usuarios: list[dict] = []
-        user_ids: set[str] = set()
-        for f in frases:
-            if f.get("revisada"):
-                user_ids.add(f["revisada"])
-            if f.get("metafora"):
-                user_ids.add(f["metafora"])
-        if user_ids:
-            try:
-                ph = ", ".join(["%s"] * len(user_ids))
+    # ── 4. Usuarios referenciados (tabla opcional) ─────────────────────────
+    usuarios: list[dict] = []
+    user_ids: set[str] = set()
+    for f in frases:
+        if f.get("revisada"):
+            user_ids.add(str(f["revisada"]))
+        if f.get("metafora"):
+            user_ids.add(str(f["metafora"]))
+    if user_ids:
+        try:
+            ph = ", ".join(["%s"] * len(user_ids))
+            with get_connection() as conn, get_cursor(conn) as cur:
                 cur.execute(f"SELECT * FROM usuario WHERE idUsuario IN ({ph})", list(user_ids))
                 usuarios = cur.fetchall()
-            except Exception:
-                pass  # tabla usuario no existe en este dump
+        except Exception:
+            pass  # tabla usuario no existe en este dump
 
     # 5. Escribir SQL
     lines: list[str] = []
@@ -95,6 +108,10 @@ def create_sample(num_docs: int, output: Path) -> None:
     lines.append("")
     lines.append("CREATE DATABASE IF NOT EXISTS `disecan` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
     lines.append("USE `disecan`;")
+    lines.append("")
+    # Desactivar FK checks durante la carga para evitar que un error detenga el import
+    lines.append("SET FOREIGN_KEY_CHECKS = 0;")
+    lines.append("SET SQL_MODE = '';")
     lines.append("")
 
     # --- documentos ---
@@ -153,10 +170,13 @@ def create_sample(num_docs: int, output: Path) -> None:
         lines.append("")
 
     write_inserts("documentos", docs)
-    if usuarios:
-        write_inserts("usuario", usuarios)
+    # Nota: la tabla 'usuario' no existe en este dump - se omite para no bloquear el import
     write_inserts("frases", frases)
     write_inserts("palabras", palabras, batch_size=500)
+
+    # Reactivar FK checks al final
+    lines.append("SET FOREIGN_KEY_CHECKS = 1;")
+    lines.append("")
 
     sql_content = "\n".join(lines)
     output.write_text(sql_content, encoding="utf-8")
@@ -167,7 +187,7 @@ def create_sample(num_docs: int, output: Path) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Genera un sample SQL de la BD DiSeCan")
-    parser.add_argument("--docs", type=int, default=10, help="Número de documentos a exportar (default: 10)")
+    parser.add_argument("--docs", type=int, default=100, help="Número de documentos a exportar (default: 10)")
     parser.add_argument("--out", type=str, default=str(OUTPUT_DEFAULT), help="Ruta del archivo SQL de salida")
     args = parser.parse_args()
 

@@ -72,9 +72,11 @@ class Chunk:
 def _reconstruir_texto(palabras: list[dict]) -> str:
     """
     Une las palabras en orden de posición para obtener el texto natural.
-    Las palabras vienen con: palabra, lema, categoria, posElementoFrase
+    Las palabras vienen con: idFrase, palabra, lema, categoria, posElementoFrase
     """
-    tokens = sorted(palabras, key=lambda p: p["posElementoFrase"])
+    # Ordenar primero por el ID de frase (orden temporal/documental) 
+    # y luego por la posición dentro de la frase.
+    tokens = sorted(palabras, key=lambda p: (p["idFrase"], p["posElementoFrase"]))
     return " ".join(p["palabra"] for p in tokens if p.get("palabra"))
 
 

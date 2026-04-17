@@ -38,13 +38,20 @@ def health():
     return jsonify({"status": "ok", "timestamp": time.time()})
 
 
-import asyncio
-from backend.orchestrator import ask_disecan
+from backend.orchestrator import ask_disecan, get_query_engine
+
+# Precarga del motor RAG al arrancar para evitar lentitud en la primera respuesta
+print("[App] Inicializando motor RAG en segundo plano...")
+try:
+    get_query_engine()
+    print("[App] Motor RAG inicializado con éxito.")
+except Exception as e:
+    print(f"[App] ADVERTENCIA: Error al precargar el motor: {e}")
 
 @app.post("/api/chat")
 def chat():
     """
-    Endpoint principal del chatbot (Síncrono para evitar problemas de dependencias).
+    Endpoint principal del chatbot (100% síncrono).
     """
     data = request.get_json(silent=True) or {}
     query: str = data.get("query", "").strip()
@@ -54,14 +61,17 @@ def chat():
         return jsonify({"error": "El campo 'query' es obligatorio."}), 400
 
     try:
-        # ── Ejecución de la lógica asíncrona en un entorno síncrono ──────
-        # Creamos un nuevo loop si es necesario o usamos asyncio.run
-        answer, sources = asyncio.run(ask_disecan(query, filters))
-        # ──────────────────────────────────────────────────────────────────
+        answer, sources = ask_disecan(query, filters)
         return jsonify({"answer": answer, "sources": sources})
     except Exception as e:
         app.logger.error(f"Error en RAG: {e}")
-        return jsonify({"error": f"Error interno: {str(e)}"}), 500
+        error_msg = str(e)
+        if "Ollama" in error_msg or "recursos" in error_msg:
+            return jsonify({
+                "answer": "El motor de IA no está respondiendo. Verifica que Ollama esté activo.",
+                "error": error_msg
+            }), 503
+        return jsonify({"error": f"Error interno: {error_msg}"}), 500
 
 
 # ── Punto de entrada ───────────────────────────────────────────────────────

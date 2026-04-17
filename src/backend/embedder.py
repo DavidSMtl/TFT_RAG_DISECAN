@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
+import torch
 from sentence_transformers import SentenceTransformer
 
 MODEL_NAME = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
@@ -18,26 +19,23 @@ BATCH_SIZE = 64
 
 
 @lru_cache(maxsize=1)
-def _load_model() -> SentenceTransformer:
+def _load_model(device: str | None = None) -> SentenceTransformer:
     """Carga el modelo una sola vez (singleton en memoria)."""
-    print(f"[Embedder] Cargando modelo '{MODEL_NAME}'...")
-    model = SentenceTransformer(MODEL_NAME)
-    print("[Embedder] Modelo cargado.")
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    print(f"[Embedder] Cargando modelo '{MODEL_NAME}' en dispositivo '{device}'...")
+    model = SentenceTransformer(MODEL_NAME, device=device)
+    print(f"[Embedder] Modelo cargado en '{device}'.")
     return model
 
 
-def embed_passages(texts: list[str]) -> list[list[float]]:
+def embed_passages(texts: list[str], device: str | None = None) -> list[list[float]]:
     """
     Genera embeddings para una lista de pasajes (chunks del corpus).
     Añade el prefijo 'passage: ' requerido por el modelo e5.
-
-    Args:
-        texts: lista de textos a embedir
-
-    Returns:
-        lista de vectores float (768 dims cada uno)
     """
-    model = _load_model()
+    model = _load_model(device)
     prefixed = [f"passage: {t}" for t in texts]
     vectors = model.encode(
         prefixed,
@@ -48,18 +46,12 @@ def embed_passages(texts: list[str]) -> list[list[float]]:
     return vectors.tolist()
 
 
-def embed_query(query: str) -> list[float]:
+def embed_query(query: str, device: str | None = None) -> list[float]:
     """
     Genera el embedding de una query de usuario.
     Añade el prefijo 'query: ' requerido por el modelo e5.
-
-    Args:
-        query: pregunta del usuario
-
-    Returns:
-        vector float (768 dims)
     """
-    model = _load_model()
+    model = _load_model(device)
     vector = model.encode(
         f"query: {query}",
         normalize_embeddings=True,

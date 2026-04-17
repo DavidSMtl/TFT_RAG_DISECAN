@@ -22,47 +22,55 @@ from llama_index.core.schema import NodeWithScore
 from llama_index.core.schema import TextNode
 from backend.chroma_store import get_all_chunks
 
+# ── Cache Global para el Retriever ──────────────────────────────────────────
+_CACHED_LEXICAL_RETRIEVER = None
+_CACHED_NODES = None
+
 def get_ensemble_retriever(index: VectorStoreIndex, filtros: dict | None = None) -> BaseRetriever:
     """
     Crea un QueryFusionRetriever que combina la búsqueda semántica y léxica.
+    Mantiene el índice BM25 en caché para evitar re-lecturas masivas.
     """
+    global _CACHED_LEXICAL_RETRIEVER, _CACHED_NODES
     
-    # 1. Rama Semántica (Consulta directa a Chroma)
+    # 1. Rama Semántica (Consulta directa a Chroma) - Siempre fresca para soportar filtros
     vector_retriever = VectorIndexRetriever(
         index=index,
         similarity_top_k=20,
         filters=_parse_filters_to_llamaindex(filtros) if filtros else None
     )
     
-    # 2. Rama Léxica (BM25)
-    # IMPORTANTE: Al cargar desde Chroma persistente, el index no tiene los nodos en memoria.
-    # Tenemos que recuperarlos para construir el índice BM25.
-    print("[Retriever] Recuperando documentos para el índice BM25...")
-    chunks = get_all_chunks()
-    nodes = [
-        TextNode(text=c["document"], id_=c["id"], metadata=c["metadata"]) 
-        for c in chunks
-    ]
+    # 2. Rama Léxica (BM25) - Cacheada
+    if _CACHED_LEXICAL_RETRIEVER is None:
+        print("[Retriever] Construyendo índice inicial BM25 (esto puede tardar la primera vez)...")
+        chunks = get_all_chunks()
+        _CACHED_NODES = [
+            TextNode(text=c["document"], id_=c["id"], metadata=c["metadata"]) 
+            for c in chunks
+        ]
+        
+        if _CACHED_NODES:
+            _CACHED_LEXICAL_RETRIEVER = BM25Retriever.from_defaults(
+                nodes=_CACHED_NODES,
+                similarity_top_k=20,
+            )
+        else:
+            print("[Retriever] ADVERTENCIA: No hay documentos para BM25.")
     
-    if not nodes:
-        print("[Retriever] ADVERTENCIA: No hay documentos para BM25. Usando solo rama semántica.")
+    # Si no hay BM25 (BD vacía o error), usamos la rama semántica
+    if _CACHED_LEXICAL_RETRIEVER is None:
         return vector_retriever
 
-    lexical_retriever = BM25Retriever.from_defaults(
-        nodes=nodes,
-        similarity_top_k=20,
-    )
-    
     # 3. Fusión por RRF (Reciprocal Rank Fusion)
     print(f"[Retriever] Ejecutando búsqueda híbrida (Semántica + BM25) para top_k=10...")
     
     ensemble_retriever = QueryFusionRetriever(
-        [vector_retriever, lexical_retriever],
+        [vector_retriever, _CACHED_LEXICAL_RETRIEVER],
         similarity_top_k=10,
         num_queries=1,
         mode="reciprocal_rerank",
         use_async=True,
-        verbose=True  # Activamos el verbose de LlamaIndex para más info
+        verbose=False
     )
     
     return ensemble_retriever
