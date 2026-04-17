@@ -36,7 +36,7 @@ def get_ensemble_retriever(index: VectorStoreIndex, filtros: dict | None = None)
     # 1. Rama Semántica (Consulta directa a Chroma) - Siempre fresca para soportar filtros
     vector_retriever = VectorIndexRetriever(
         index=index,
-        similarity_top_k=20,
+        similarity_top_k=40,
         filters=_parse_filters_to_llamaindex(filtros) if filtros else None
     )
     
@@ -52,7 +52,7 @@ def get_ensemble_retriever(index: VectorStoreIndex, filtros: dict | None = None)
         if _CACHED_NODES:
             _CACHED_LEXICAL_RETRIEVER = BM25Retriever.from_defaults(
                 nodes=_CACHED_NODES,
-                similarity_top_k=20,
+                similarity_top_k=40,
             )
         else:
             print("[Retriever] ADVERTENCIA: No hay documentos para BM25.")
@@ -66,7 +66,7 @@ def get_ensemble_retriever(index: VectorStoreIndex, filtros: dict | None = None)
     
     ensemble_retriever = QueryFusionRetriever(
         [vector_retriever, _CACHED_LEXICAL_RETRIEVER],
-        similarity_top_k=10,
+        similarity_top_k=20,
         num_queries=1,
         mode="reciprocal_rerank",
         use_async=True,
