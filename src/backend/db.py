@@ -234,3 +234,79 @@ def get_ids_documentos_por_filtros(filtros: dict) -> list[int] | None:
     if not _tiene_filtros:
         return None
     return [d["idDocumento"] for d in docs]  # type: ignore[index]
+
+
+# ── Búsqueda léxica por lemas (DiSeCan) ───────────────────────────────────────
+
+
+def lexical_search_chunks(
+    lemas: list[str],
+    filtros: dict | None = None,
+    top_k: int = 40,
+) -> list[dict]:
+    """
+    Búsqueda léxica al estilo DiSeCan: busca lemas exactos en la tabla `palabras`
+    y devuelve los grupos (id_documento, id_frase_inicio, id_frase_fin) con mayor
+    número de coincidencias. Esto permite mapear resultados SQL → chunk de Chroma.
+
+    Args:
+        lemas   : lista de lemas normalizados (ej: ["universidad", "presupuesto"])
+        filtros : dict con 'legislatura', 'num_sesion', etc. (optional)
+        top_k   : máximo de resultados
+
+    Returns:
+        lista de dicts con:
+            id_documento, id_frase, orador, fecha, legislatura, num_sesion,
+            n_matches (nº de lemas encontrados en frases cercanas)
+    """
+    if not lemas:
+        return []
+
+    # Normalizar lemas a minúsculas
+    lemas_lower = [l.lower() for l in lemas if l.strip()]
+    if not lemas_lower:
+        return []
+
+    placeholders = ", ".join(["%s"] * len(lemas_lower))
+
+    # Filtros de documentos opcionales
+    doc_clauses: list[str] = []
+    doc_params: list[object] = []
+    if filtros:
+        if leg := filtros.get("legislatura"):
+            doc_clauses.append("d.legislatura = %s")
+            doc_params.append(leg)
+        if ns := filtros.get("num_sesion"):
+            doc_clauses.append("d.numSesion = %s")
+            doc_params.append(int(ns))
+
+    where_doc = "AND " + " AND ".join(doc_clauses) if doc_clauses else ""
+
+    # La query busca frases donde aparecen los lemas buscados,
+    # agrupa por frase y cuenta cuántos lemas distintos aparecen.
+    # ORDER BY n_matches DESC garantiza que las frases más relevantes van primero.
+    sql = f"""
+        SELECT
+            f.idFrases      AS id_frase,
+            f.orador        AS orador,
+            f.idDocumento   AS id_documento,
+            d.legislatura   AS legislatura,
+            d.fecha         AS fecha,
+            d.numSesion     AS num_sesion,
+            COUNT(DISTINCT p.lema) AS n_matches
+        FROM palabras p
+        JOIN frases f   ON p.idFrase = f.idFrases
+        JOIN documentos d ON f.idDocumento = d.idDocumento
+        WHERE LOWER(p.lema) IN ({placeholders})
+        {where_doc}
+        GROUP BY f.idFrases, f.orador, f.idDocumento, d.legislatura, d.fecha, d.numSesion
+        ORDER BY n_matches DESC, f.idFrases ASC
+        LIMIT %s
+    """
+    params = lemas_lower + doc_params + [top_k * 4]  # traer más para filtrar duplicados
+
+    with get_connection() as conn, get_cursor(conn) as cur:
+        cur.execute(sql, params)
+        rows = [_fix_encoding(r) for r in cur.fetchall()]
+
+    return rows  # type: ignore[return-value]
