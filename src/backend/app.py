@@ -61,8 +61,12 @@ def chat():
         return jsonify({"error": "El campo 'query' es obligatorio."}), 400
 
     try:
-        answer, sources = ask_disecan(query, filters)
-        return jsonify({"answer": answer, "sources": sources})
+        answer, sources, keywords = ask_disecan(query, filters)
+        return jsonify({
+            "answer": answer, 
+            "sources": sources,
+            "keywords": keywords
+        })
     except Exception as e:
         app.logger.error(f"Error en RAG: {e}")
         error_msg = str(e)

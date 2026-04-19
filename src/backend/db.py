@@ -54,6 +54,72 @@ def get_cursor(conn: MySQLConnection) -> Generator[MySQLCursor, None, None]:
         cursor.close()
 
 
+import re
+
+
+def reconstruct_text(palabras: list[dict]) -> str:
+    """Une las palabras en orden de posición y limpia puntuación."""
+    if not palabras:
+        return ""
+
+    # Ordenar por idFrase y posición
+    tokens = sorted(palabras, key=lambda p: (p["idFrase"], p["posElementoFrase"]))
+
+    # Reconstrucción básica
+    text = " ".join(p["palabra"] for p in tokens if p.get("palabra"))
+
+    if not text:
+        return ""
+
+    # Limpieza de espacios antes de signos de puntuación (e.g. "hola ." -> "hola.")
+    text = re.sub(r"\s+([,.?!:;])", r"\1", text)
+
+    # Capitalizar primera letra
+    text = text[0].upper() + text[1:] if len(text) > 0 else text
+
+    # Heurística: Si no termina en puntuación, añadir punto.
+    if text[-1] not in ".?!":
+        text += "."
+
+    return text
+
+
+def get_context_around_frase(id_frase: int, window: int = 5) -> str:
+    """
+    Obtiene el texto de las frases que rodean a una frase central.
+    Utilizado para expandir el contexto que ve el LLM y lo que se muestra en el UI.
+    """
+    with get_connection() as conn, get_cursor(conn) as cur:
+        # 1. Obtener idDocumento
+        cur.execute("SELECT idDocumento FROM frases WHERE idFrases = %s", (id_frase,))
+        row = cur.fetchone()
+        if not row:
+            return ""
+        id_doc = row["idDocumento"]
+
+        # 2. Buscar IDs de frases en el rango (ventana)
+        # Aseguramos que solo cogemos frases del mismo documento
+        sql = """
+            SELECT idFrases FROM frases 
+            WHERE idDocumento = %s AND idFrases BETWEEN %s AND %s
+            ORDER BY idFrases ASC
+        """
+        cur.execute(sql, (id_doc, id_frase - window, id_frase + window))
+        ids = [r["idFrases"] for r in cur.fetchall()]
+
+    if not ids:
+        return ""
+
+    # 3. Obtener palabras de todas esas frases y reconstruir
+    pals_map = get_palabras_por_frases_batch(ids)
+    all_words = []
+    # Los IDs ya vienen ordenados por la query SQL
+    for fid in ids:
+        all_words.extend(pals_map.get(fid, []))
+
+    return reconstruct_text(all_words)
+
+
 # ── Consultas de metadatos ─────────────────────────────────────────────────────
 
 
@@ -187,35 +253,32 @@ def get_palabras_por_frase(id_frase: int) -> list[dict]:
 
 def get_palabras_por_frases_batch(ids_frases: list[int]) -> dict[int, list[dict]]:
     """
-    Versión batch: recupera palabras de una lista de frases en UNA sola query.
-    Mucho más eficiente para la ingestión masiva.
-
-    Devuelve: { id_frase: [palabras ordenadas] }
+    Versión batch robusta: recupera palabras en bloques de 500 para evitar
+    el error de 'too many SQL variables'.
     """
     if not ids_frases:
         return {}
 
-    placeholders = ", ".join(["%s"] * len(ids_frases))
-    sql = f"""
-        SELECT
-            idFrase,
-            palabra,
-            lema,
-            categoria,
-            posElementoFrase
-        FROM palabras
-        WHERE idFrase IN ({placeholders})
-        ORDER BY idFrase ASC, posElementoFrase ASC
-    """
-    with get_connection() as conn, get_cursor(conn) as cur:
-        cur.execute(sql, ids_frases)
-        rows = [_fix_encoding(r) for r in cur.fetchall()]
-
-    # Agrupar por idFrase
     result: dict[int, list[dict]] = {}
-    for row in rows:
-        fid = row["idFrase"]  # type: ignore[index]
-        result.setdefault(fid, []).append(row)  # type: ignore[assignment]
+    batch_size = 500
+
+    for i in range(0, len(ids_frases), batch_size):
+        chunk = ids_frases[i : i + batch_size]
+        placeholders = ", ".join(["%s"] * len(chunk))
+        sql = f"""
+            SELECT idFrase, palabra, lema, categoria, posElementoFrase
+            FROM palabras
+            WHERE idFrase IN ({placeholders})
+            ORDER BY idFrase ASC, posElementoFrase ASC
+        """
+        with get_connection() as conn, get_cursor(conn) as cur:
+            cur.execute(sql, chunk)
+            rows = [_fix_encoding(r) for r in cur.fetchall()]
+
+        for row in rows:
+            fid = row["idFrase"] # type: ignore[index]
+            result.setdefault(fid, []).append(row) # type: ignore[assignment]
+
     return result
 
 
@@ -244,34 +307,34 @@ def lexical_search_chunks(
     filtros: dict | None = None,
     top_k: int = 40,
 ) -> list[dict]:
-    """
-    Búsqueda léxica al estilo DiSeCan: busca lemas exactos en la tabla `palabras`
-    y devuelve los grupos (id_documento, id_frase_inicio, id_frase_fin) con mayor
-    número de coincidencias. Esto permite mapear resultados SQL → chunk de Chroma.
+    """Búsqueda léxica clásica (usada por compatibilidad)."""
+    # Mapeamos a la nueva función para centralizar lógica
+    from backend.query_analyzer import SearchPlan
+    plan = SearchPlan(must_have=lemas, intent="hybrid")
+    return lexical_search_advanced(plan, filtros, top_k)
 
-    Args:
-        lemas   : lista de lemas normalizados (ej: ["universidad", "presupuesto"])
-        filtros : dict con 'legislatura', 'num_sesion', etc. (optional)
-        top_k   : máximo de resultados
 
-    Returns:
-        lista de dicts con:
-            id_documento, id_frase, orador, fecha, legislatura, num_sesion,
-            n_matches (nº de lemas encontrados en frases cercanas)
+def lexical_search_advanced(
+    plan: 'SearchPlan',
+    filtros: dict | None = None,
+    top_k: int = 40,
+) -> list[dict]:
     """
-    if not lemas:
+    Búsqueda léxica avanzada que soporta:
+    - Palabras obligatorias (must_have).
+    - Entidades (prioridad alta).
+    - Frases exactas (secuencia de palabras).
+    - Pesado por categoría (Sustantivos/Verbos tienen más peso).
+    """
+    if not plan.must_have and not plan.exact_phrases and not plan.entities:
         return []
 
-    # Normalizar lemas a minúsculas
-    lemas_lower = [l.lower() for l in lemas if l.strip()]
-    if not lemas_lower:
-        return []
-
-    placeholders = ", ".join(["%s"] * len(lemas_lower))
-
-    # Filtros de documentos opcionales
-    doc_clauses: list[str] = []
-    doc_params: list[object] = []
+    # 1. Preparar términos básicos (lemas de must_have + entities)
+    base_terms = [t.lower() for t in plan.must_have + plan.entities]
+    
+    # 2. Filtros de documentos
+    doc_clauses = []
+    doc_params = []
     if filtros:
         if leg := filtros.get("legislatura"):
             doc_clauses.append("d.legislatura = %s")
@@ -279,12 +342,28 @@ def lexical_search_chunks(
         if ns := filtros.get("num_sesion"):
             doc_clauses.append("d.numSesion = %s")
             doc_params.append(int(ns))
-
     where_doc = "AND " + " AND ".join(doc_clauses) if doc_clauses else ""
 
-    # La query busca frases donde aparecen los lemas buscados,
-    # agrupa por frase y cuenta cuántos lemas distintos aparecen.
-    # ORDER BY n_matches DESC garantiza que las frases más relevantes van primero.
+    # 3. Construcción de Query con Pesos
+    # Heurística: Categorías que empiezan por 3 (Nombres) o 1 (Verbos) valen x2/x3
+    if base_terms:
+        # Usamos un conjunto de placeholders único para evitar parámetros duplicados innecesarios
+        ph_lemas = ", ".join(["%s"] * len(base_terms))
+        where_terms = f"(LOWER(p.lema) IN ({ph_lemas}) OR LOWER(p.palabra) IN ({ph_lemas}))"
+        # Pasamos la lista de términos dos veces (una para lema, otra para palabra)
+        params = base_terms + base_terms
+    else:
+        # Fallback para exact_phrases sin términos base (poco común)
+        all_words = []
+        for phrase in plan.exact_phrases:
+            all_words.extend(re.findall(r"\w+", phrase.lower()))
+        if all_words:
+            ph_lemas = ", ".join(["%s"] * len(all_words))
+            where_terms = f"(LOWER(p.lema) IN ({ph_lemas}) OR LOWER(p.palabra) IN ({ph_lemas}))"
+            params = all_words + all_words
+        else:
+            return []
+    
     sql = f"""
         SELECT
             f.idFrases      AS id_frase,
@@ -293,20 +372,40 @@ def lexical_search_chunks(
             d.legislatura   AS legislatura,
             d.fecha         AS fecha,
             d.numSesion     AS num_sesion,
-            COUNT(DISTINCT p.lema) AS n_matches
+            SUM(CASE 
+                WHEN p.categoria BETWEEN 3000 AND 3999 THEN 5 -- Nombres (Sustantivos) - Aumentado peso
+                WHEN p.categoria BETWEEN 1000 AND 1999 THEN 3 -- Verbos
+                ELSE 1 
+            END) AS score,
+            COUNT(DISTINCT p.lema) AS n_distinct_matches
         FROM palabras p
         JOIN frases f   ON p.idFrase = f.idFrases
         JOIN documentos d ON f.idDocumento = d.idDocumento
-        WHERE LOWER(p.lema) IN ({placeholders})
+        WHERE {where_terms}
         {where_doc}
         GROUP BY f.idFrases, f.orador, f.idDocumento, d.legislatura, d.fecha, d.numSesion
-        ORDER BY n_matches DESC, f.idFrases ASC
+        HAVING score > 0
+        ORDER BY score DESC, n_distinct_matches DESC
         LIMIT %s
     """
-    params = lemas_lower + doc_params + [top_k * 4]  # traer más para filtrar duplicados
+    
+    params += doc_params + [top_k * 5]
 
     with get_connection() as conn, get_cursor(conn) as cur:
         cur.execute(sql, params)
         rows = [_fix_encoding(r) for r in cur.fetchall()]
 
-    return rows  # type: ignore[return-value]
+    # 4. Post-filtro para frases exactas (si existen)
+    if plan.exact_phrases:
+        final_rows = []
+        for row in rows:
+            text = get_context_around_frase(row["id_frase"], window=1).lower()
+            match_exact = any(phrase.lower() in text for phrase in plan.exact_phrases)
+            if match_exact:
+                row["score"] += 100 # Bonus masivo por match exacto de frase
+            final_rows.append(row)
+        
+        final_rows.sort(key=lambda x: x["score"], reverse=True)
+        return final_rows[:top_k]
+
+    return rows[:top_k]

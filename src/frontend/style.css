@@ -209,10 +209,60 @@ header h1 {
     color: #6fb3f7;
 }
 
+.context-toggle-btn {
+    background: none;
+    border: none;
+    color: #f4b942;
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 0.4rem 0.8rem;
+    font-weight: bold;
+    text-decoration: underline;
+    display: block;
+}
+
+.context-toggle-btn:hover {
+    color: #ffcc66;
+}
+
+.source-context {
+    display: none;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.8rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: #d1d5db;
+    border-top: 1px solid #3a3f4a;
+    border-bottom: 1px solid #3a3f4a;
+    font-style: italic;
+}
+
+.source-context.open {
+    display: block;
+}
+
 .source-meta {
     padding: 0.4rem 0.8rem;
     font-size: 0.75rem;
     color: #8b92a5;
+}
+
+/* Resaltado de palabras clave y frases */
+.highlighted-word {
+    color: #f4b942;
+    font-weight: bold;
+    background: rgba(244, 185, 66, 0.15);
+    padding: 0 2px;
+    border-radius: 3px;
+}
+
+.underlined-sentence {
+    background: rgba(255, 255, 255, 0.05);
+    text-decoration: underline;
+    text-decoration-color: #1a56a4;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+    color: #ffffff;
 }
 
 /* Input de chat */

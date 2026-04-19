@@ -25,13 +25,15 @@ from backend.db import (
     get_documentos,
     get_frases_por_documento,
     get_palabras_por_frases_batch,
+    reconstruct_text,
 )
 from backend.embedder import embed_passages
 
 # ── Configuración ──────────────────────────────────────────────────────────────
 
-UPSERT_BATCH = 32   # Chunks por lote de embedding + upsert (ajustar según RAM)
-MIN_WORDS = 3       # Descartar chunks de menos de N palabras (ruido)
+UPSERT_BATCH = 32   # Chunks por lote de embedding + upsert
+MIN_WORDS = 3       # Descartar chunks de menos de N palabras
+CHUNK_MAX_WORDS = 400 # Tamaño objetivo de un fragmento (en palabras acumuladas)
 
 
 # ── Estructuras ────────────────────────────────────────────────────────────────
@@ -39,7 +41,7 @@ MIN_WORDS = 3       # Descartar chunks de menos de N palabras (ruido)
 
 @dataclass
 class Chunk:
-    """Representa el turno completo de un orador en un documento."""
+    """Representa un fragmento de texto (párrafo) compuesto por frases completas."""
     texto: str
     orador: str
     id_documento: int
@@ -49,7 +51,8 @@ class Chunk:
     id_frase_inicio: int
     id_frase_fin: int
     num_frases: int
-    pdf_file: str = ""   # Nombre del fichero PDF original
+    frases_data: str = "" # JSON string: { "idFrase": "Reconstructed text" }
+    pdf_file: str = ""
     chunk_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def to_metadata(self) -> dict:
@@ -62,95 +65,98 @@ class Chunk:
             "id_frase_inicio": self.id_frase_inicio,
             "id_frase_fin": self.id_frase_fin,
             "num_frases": self.num_frases,
-            "pdf_file": self.pdf_file
+            "pdf_file": self.pdf_file,
+            "frases_data": self.frases_data
         }
 
 
 # Lógica de reconstrucción de texto
 
 
-def _reconstruir_texto(palabras: list[dict]) -> str:
-    """
-    Une las palabras en orden de posición para obtener el texto natural.
-    Las palabras vienen con: idFrase, palabra, lema, categoria, posElementoFrase
-    """
-    # Ordenar primero por el ID de frase (orden temporal/documental) 
-    # y luego por la posición dentro de la frase.
-    tokens = sorted(palabras, key=lambda p: (p["idFrase"], p["posElementoFrase"]))
-    return " ".join(p["palabra"] for p in tokens if p.get("palabra"))
+import json
 
 
 # Lógica de chunking
 
 
-def _agrupar_turnos(frases: list[dict]) -> list[tuple[str, list[dict]]]:
+
+
+def _chunks_de_documento(
+    doc: dict, phrases: list[dict], words_per_phrase: dict[int, list[dict]]
+) -> list[Chunk]:
     """
-    Agrupa frases consecutivas por orador.
-    Devuelve lista de (orador, [frases_del_turno]).
-
-    Consideraciones:
-    - Si orador es None/vacío, se agrupa bajo "DESCONOCIDO"
-    - Dos frases seguidas del mismo orador = mismo turno (aunque haya salto de idFrases)
-    """
-    turnos: list[tuple[str, list[dict]]] = []
-    orador_actual: str | None = None
-    grupo_actual: list[dict] = []
-
-    for frase in frases:
-        orador = (frase.get("orador") or "DESCONOCIDO").strip()
-        if orador == orador_actual:
-            grupo_actual.append(frase)
-        else:
-            if grupo_actual:
-                turnos.append((orador_actual or "DESCONOCIDO", grupo_actual))
-            orador_actual = orador
-            grupo_actual = [frase]
-
-    if grupo_actual:
-        turnos.append((orador_actual or "DESCONOCIDO", grupo_actual))
-
-    return turnos
-
-
-def _chunks_de_documento(doc: dict, frases: list[dict], palabras_por_frase: dict[int, list[dict]]) -> list[Chunk]:
-    """
-    Genera todos los chunks de un documento dado sus frases y palabras.
-
-    Args:
-        doc              : fila de documentos (idDocumento, legislatura, fecha, numSesion)
-        frases           : frases del documento ordenadas
-        palabras_por_frase: {idFrase: [palabras]}
+    Agrupa frases consecutivas del mismo orador en un solo chunk (Párrafo).
+    Guarda un mapa idFrase -> texto en los metadatos.
     """
     chunks: list[Chunk] = []
-    turnos = _agrupar_turnos(frases)
+    if not phrases:
+        return []
 
-    for orador, frases_turno in turnos:
-        # Reconstruir texto del turno completo
-        palabras_turno: list[dict] = []
-        for frase in frases_turno:
-            palabras_turno.extend(palabras_por_frase.get(frase["idFrases"], []))
+    current_speaker = None
+    current_frases: list[dict] = []
+    current_words_count = 0
 
-        texto = _reconstruir_texto(palabras_turno)
+    def flush_chunk():
+        nonlocal current_frases, current_speaker, current_words_count
+        if not current_frases:
+            return
 
-        # Descartar chunks vacíos o de muy pocas palabras
-        if len(texto.split()) < MIN_WORDS:
-            continue
+        all_words_in_chunk = []
+        frases_map = {}
+        
+        for f in current_frases:
+            fid = f["idFrases"]
+            pals = words_per_phrase.get(fid, [])
+            if not pals: continue
+            
+            # Reconstruir frase individual (con puntuación heurística de db.reconstruct_text)
+            f_text = reconstruct_text(pals)
+            frases_map[str(fid)] = f_text
+            all_words_in_chunk.extend(pals)
 
-        chunks.append(
-            Chunk(
-                texto=texto,
-                orador=orador,
-                id_documento=doc["idDocumento"],
-                legislatura=doc.get("legislatura") or "",
-                fecha=str(doc.get("fecha") or ""),
-                num_sesion=doc.get("numSesion") or 0,
-                id_frase_inicio=frases_turno[0]["idFrases"],
-                id_frase_fin=frases_turno[-1]["idFrases"],
-                num_frases=len(frases_turno),
-                pdf_file=doc.get("nombreFicheroPDF", "")
-            )
-        )
+        if not all_words_in_chunk:
+            return
 
+        full_text = reconstruct_text(all_words_in_chunk)
+        
+        # Filtro mínimo de calidad
+        if len(full_text.split()) < MIN_WORDS:
+            return
+
+        chunks.append(Chunk(
+            texto=full_text,
+            orador=(current_speaker or "DESCONOCIDO").strip(),
+            id_documento=doc["idDocumento"],
+            legislatura=doc.get("legislatura") or "",
+            fecha=str(doc.get("fecha") or ""),
+            num_sesion=doc.get("numSesion") or 0,
+            id_frase_inicio=current_frases[0]["idFrases"],
+            id_frase_fin=current_frases[-1]["idFrases"],
+            num_frases=len(current_frases),
+            frases_data=json.dumps(frases_map),
+            pdf_file=doc.get("nombreFicheroPDF", "")
+        ))
+
+    for f in phrases:
+        speaker = (f.get("orador") or "DESCONOCIDO").strip()
+        fid = f["idFrases"]
+        words_f = words_per_phrase.get(fid, [])
+        word_count = len(words_f)
+
+        if current_speaker is None:
+            current_speaker = speaker
+
+        # Lógica de agrupación: mismo orador Y no exceder límite de palabras
+        if speaker == current_speaker and current_words_count + word_count <= CHUNK_MAX_WORDS:
+            current_frases.append(f)
+            current_words_count += word_count
+        else:
+            flush_chunk()
+            current_speaker = speaker
+            current_frases = [f]
+            current_words_count = word_count
+
+    flush_chunk() # Último chunk
     return chunks
 
 

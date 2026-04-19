@@ -14,6 +14,7 @@ Arquitectura:
 from __future__ import annotations
 
 import re
+import json
 from typing import List
 
 from llama_index.core import VectorStoreIndex, QueryBundle
@@ -25,8 +26,9 @@ from llama_index.core.retrievers import (
 from llama_index.core.schema import NodeWithScore, TextNode
 
 from backend.chroma_store import get_all_chunks
-from backend.db import lexical_search_chunks
+from backend.db import lexical_search_chunks, lexical_search_advanced
 from backend.lemmatizer import get_lemas
+from backend.query_analyzer import SearchPlan
 
 
 # ── SQL Lexical Retriever ──────────────────────────────────────────────────────
@@ -68,18 +70,38 @@ class SQLLexicalRetriever(BaseRetriever):
         super().__init__()
 
     def _retrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
-        """Busca los lemas de la query en MySQL y mapea los resultados a chunks."""
+        """Busca los fragmentos usando el plan de búsqueda (si viene en JSON) o lemas."""
         query = query_bundle.query_str
-        lemas = get_lemas(query)
+        
+        # Intentar parsear como SearchPlan (pasado desde orchestrator)
+        plan = None
+        if query.startswith("{") and "must_have" in query:
+            try:
+                plan = SearchPlan(**json.loads(query))
+            except:
+                pass
+        
+        if not plan:
+            lemas = get_lemas(query)
+            plan = SearchPlan(must_have=lemas, intent="hybrid")
+            print(f"[SQLLexical] Buscando lemas simples: {lemas}")
+        else:
+            # 1. Expandir diccionario de intenciones usando el Lematizador
+            # Combinamos palabras obligatorias y expansión técnica
+            all_raw_terms = plan.must_have + plan.expansion + plan.entities
+            
+            # Lematizamos profundamente cada término para asegurar match con DiSeCan
+            # Eliminamos duplicados
+            deep_lemas = []
+            for term in all_raw_terms:
+                deep_lemas.extend(get_lemas(term))
+            
+            plan.must_have = list(set(deep_lemas))
+            print(f"[SQLLexical] Diccionario de Intenciones Lematizado: {plan.must_have}")
 
-        if not lemas:
-            return []
-
-        print(f"[SQLLexical] Buscando lemas: {lemas}")
-
-        # 1. Buscar frases que contienen los lemas (en MySQL)
-        sql_matches = lexical_search_chunks(
-            lemas=lemas,
+        # 2. Buscar frases que cumplen el plan (en MySQL)
+        sql_matches = lexical_search_advanced(
+            plan=plan,
             filtros=self._filtros,
             top_k=self._top_k,
         )
@@ -96,15 +118,17 @@ class SQLLexicalRetriever(BaseRetriever):
         chunk_scores: dict[str, float] = {}   # chunk_id → score acumulado
         chunk_nodes: dict[str, dict] = {}     # chunk_id → chroma chunk dict
 
-        n_lemas = max(len(lemas), 1)
+        # Normalización de score base
+        # Aseguramos casting a float para evitar errores con Decimal de MySQL
+        max_sql_score = float(max([m["score"] for m in sql_matches])) if sql_matches else 1.0
 
         for match in sql_matches:
-            id_frase: int = match["id_frase"]           # type: ignore[assignment]
-            id_doc: int = match["id_documento"]         # type: ignore[assignment]
-            n_matches: int = match["n_matches"]         # type: ignore[assignment]
+            id_frase: int = match["id_frase"]
+            id_doc: int = match["id_documento"]
+            sql_score: float = float(match["score"])
 
-            # Score normalizado: fracción de lemas encontrados en esa frase
-            score = float(n_matches) / n_lemas
+            # Score normalizado respecto al mejor resultado SQL
+            score = sql_score / max_sql_score
 
             # Buscar el chunk que contiene esta frase
             for chunk in self._idx_by_doc.get(int(id_doc), []):
@@ -196,7 +220,7 @@ def get_ensemble_retriever(
 
     ensemble_retriever = QueryFusionRetriever(
         [vector_retriever, sql_lexical_retriever],
-        similarity_top_k=10,
+        similarity_top_k=7,
         num_queries=1,               # No generar sub-queries extra
         mode="reciprocal_rerank",    # RRF
         use_async=False,             # Síncrono para evitar event-loop issues

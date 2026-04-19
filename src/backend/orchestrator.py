@@ -25,6 +25,8 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 from backend.chroma_store import get_collection
 from backend.retriever import get_ensemble_retriever
 from backend.embedder import embed_query, embed_passages
+from backend.query_analyzer import QueryAnalyzer
+from backend.reranker import LLMReranker
 
 class ChronicNodePostprocessor(BaseNodePostprocessor):
     """Ordena los fragmentos recuperados cronológicamente."""
@@ -39,6 +41,93 @@ class ChronicNodePostprocessor(BaseNodePostprocessor):
                 x.node.metadata.get("id_frase_inicio", 0)
             )
         )
+
+import json
+import re
+
+# Lista básica de stopwords en español para filtrado de relevancia
+STOPWORDS = {
+    "que", "de", "se", "el", "la", "a", "en", "y", "o", "un", "una", 
+    "los", "las", "por", "con", "no", "su", "sus", "para", "como", 
+    "al", "lo", "del", "qué", "cuál", "cuáles", "quién", "quiénes",
+    "donde", "cuando", "esta", "este", "estos", "estas", "han", "ha", 
+    "hay", "es", "son", "fue", "eran"
+}
+
+def get_sentence_score(sentence: str, query_words: set[str]) -> float:
+    """
+    Calcula una puntuación de solapamiento de palabras con pesos diferenciados:
+    - Palabras de contenido (no stopwords): 10.0 puntos
+    - Palabras comunes (stopwords): 1.0 puntos
+    - Coincidencia parcial (ej: plurales): 5.0 puntos
+    """
+    if not sentence or not query_words:
+        return 0.0
+        
+    s_text = sentence.lower()
+    s_words = set(re.findall(r"\w+", s_text))
+    score = 0.0
+    
+    for qw in query_words:
+        # 1. Coincidencia exacta
+        if qw in s_words:
+            if qw in STOPWORDS:
+                score += 1.0
+            else:
+                score += 10.0
+        # 2. Coincidencia parcial (manejo de plurales/raíces)
+        else:
+            # Solo si la palabra es suficientemente larga para no dar falsos positivos
+            if len(qw) > 3:
+                for sw in s_words:
+                    if len(sw) > 3 and (qw in sw or sw in qw):
+                        # Evitamos dar puntos a stopwords que coincidan parcialmente
+                        if qw not in STOPWORDS and sw not in STOPWORDS:
+                            score += 5.0
+                            break # Solo un match parcial por palabra de query
+    return score
+
+class SentencePickerPostprocessor(BaseNodePostprocessor):
+    """
+    Selecciona la frase más relevante dentro de un chunk (Párrafo) 
+    basándose en la query del usuario.
+    """
+    def _postprocess_nodes(
+        self, nodes: list[NodeWithScore], query_bundle: QueryBundle | None = None
+    ) -> list[NodeWithScore]:
+        if not query_bundle:
+            return nodes
+            
+        query_text = query_bundle.query_str.lower()
+        query_words = set(re.findall(r"\w+", query_text))
+        
+        for nws in nodes:
+            meta = nws.node.metadata
+            frases_json = meta.get("frases_data")
+            
+            if frases_json:
+                try:
+                    frases_map = json.loads(frases_json)
+                    best_text = ""
+                    max_score = -1.0
+                    
+                    # Buscamos la frase con más palabras coincidentes
+                    for fid, text in frases_map.items():
+                        score = get_sentence_score(text, query_words)
+                        if score > max_score:
+                            max_score = score
+                            best_text = text
+                    
+                    if best_text:
+                        nws.node.metadata["original_sentence"] = best_text
+                except Exception as e:
+                    print(f"[Orchestrator] Error decodificando frases_data: {e}")
+            
+            # Fallback si no hay mapa o falla la selección
+            if "original_sentence" not in nws.node.metadata:
+                nws.node.metadata["original_sentence"] = nws.node.get_content()
+        
+        return nodes
 
 load_dotenv()
 
@@ -87,26 +176,30 @@ setup_settings()
 # ── Prompts ────────────────────────────────────────────────────────────────
 
 QA_PROMPT_STR = (
-    "Eres un asistente especializado en el Diario de Sesiones del Parlamento de Canarias.\n"
-    "A continuación tienes fragmentos literales de intervenciones parlamentarias:\n"
+    "Eres un asistente analítico especializado en el Parlamento de Canarias.\n"
+    "Se te proporcionan fragmentos de intervenciones parlamentarias (párrafos).\n"
+    "Tu objetivo es generar un RESUMEN completo y estructurado de la información hallada.\n"
     "---------------------\n"
     "{context_str}\n"
     "---------------------\n"
     "Pregunta del usuario: {query_str}\n\n"
-    "Instrucciones:\n"
+    "Instrucciones estricatmente obligatorias:\n"
     "1. Responde SIEMPRE en ESPAÑOL.\n"
-    "2. Estructura tu respuesta en párrafos separados, uno por orador o tema.\n"
-    "3. Cita el nombre del orador y la fecha cuando estén disponibles.\n"
-    "4. Si la información no está en el contexto, responde exactamente: "
-    "'No he encontrado información sobre ese tema en las sesiones disponibles.'\n"
-    "5. NO inventes datos que no estén en el contexto.\n\n"
-    "Respuesta:"
+    "2. Sintetiza la información en párrafos breves y claros.\n"
+    "3. Si hay varios oradores, agrupa lo que dicen de forma coherente.\n"
+    "4. Cita nombres y fechas si son relevantes.\n"
+    "5. Si no hay información suficiente en los fragmentos, di: 'No se ha encontrado información específica en el diario de sesiones.'\n"
+    "6. NO divagues. Ve directo al grano.\n\n"
+    "7. No inventes información que no esté en los fragmentos.\n\n"
+    "Resumen:"
 )
 QA_PROMPT = PromptTemplate(QA_PROMPT_STR)
 
 # ── Singleton para el motor RAG ─────────────────────────────────────────────
 
 _QUERY_ENGINE = None
+query_analyzer = QueryAnalyzer()
+reranker = LLMReranker()
 
 def get_query_engine(filtros: dict | None = None):
     """
@@ -150,6 +243,7 @@ def _build_query_engine(filtros: dict | None = None):
         retriever=ensemble_retriever,
         response_synthesizer=response_synthesizer,
         node_postprocessors=[
+            SentencePickerPostprocessor(),
             ChronicNodePostprocessor()
         ]
     )
@@ -162,22 +256,55 @@ def _build_query_engine(filtros: dict | None = None):
 def ask_disecan(query: str, filtros: dict | None = None):
     """
     Realiza la búsqueda híbrida y genera la respuesta de forma síncrona.
-    Solución al error 'Event loop is closed': no usamos async/await.
+    Integrando el Analizador de Consultas y el Re-rankeo LLM.
     """
     try:
+        # 1. Análisis Agéntico
+        print(f"[Orchestrator] Analizando consulta: '{query}'...")
+        plan = query_analyzer.analyze(query)
+        
+        # 2. Preparación de Búsqueda
+        # Pasamos el plan como JSON en el query_str para el retriever léxico
+        # Pero usamos el Párrafo HyDE para el embedding vectorial
+        plan_json = plan.model_dump_json()
+        
+        hyde_text = plan.hypothetical_answer if plan.hypothetical_answer else query
+        print(f"[Orchestrator] HyDE (Párrafo Hipotético): {hyde_text[:100]}...")
+        
+        bundle = QueryBundle(
+            query_str=plan_json, 
+            embedding=Settings.embed_model.get_query_embedding(hyde_text) # Consistencia CPU
+        )
+        
         engine = get_query_engine(filtros)
         
-        print(f"[Orchestrator] Procesando consulta: '{query}'...")
-        # Usamos query() síncrono en lugar de aquery() asíncrono
-        response = engine.query(query)
+        # 3. Recuperación Inicial
+        print(f"[Orchestrator] Ejecutando búsqueda híbrida...")
+        initial_response = engine.query(bundle)
         
-        print(f"[Orchestrator] Recuperados {len(response.source_nodes)} fragmentos.")
+        # 4. Re-rankeo Contextual (Refinamiento)
+        print(f"[Orchestrator] Re-rankeando {len(initial_response.source_nodes)} fragmentos filtrados...")
+        final_nodes = reranker.rerank(query, initial_response.source_nodes, top_n=5)
+        
+        # 5. Síntesis Final (usando los nodos refinados)
+        # Re-creamos el sintetizador o simplemente usamos el del engine
+        # pero para asegurar que use SOLO los re-rankeados, sintetizamos manualmente
+        response_synthesizer = get_response_synthesizer(
+            response_mode="compact",
+            llm=Settings.llm
+        )
+        # Actualizar prompt del sintetizador manual
+        response_synthesizer.update_prompts({"text_qa_template": QA_PROMPT})
+        
+        final_response = response_synthesizer.synthesize(
+            query=query,
+            nodes=final_nodes
+        )
         
         sources = []
-        for node in response.source_nodes:
+        for node in final_nodes:
             meta = node.metadata
             score = node.score or 0.0
-            print(f"  - Fragmento de {meta.get('orador')} (Score: {score:.4f})")
             
             leg = meta.get("legislatura", "")
             pdf_name = meta.get("pdf_file", "")
@@ -187,7 +314,8 @@ def ask_disecan(query: str, filtros: dict | None = None):
             )
 
             sources.append({
-                "fragment": node.get_content(),
+                "fragment": meta.get("original_sentence", node.get_content()),
+                "context": node.get_content(),
                 "speaker": meta.get("orador", "Desconocido"),
                 "date": meta.get("fecha", ""),
                 "legislature": leg,
@@ -196,7 +324,10 @@ def ask_disecan(query: str, filtros: dict | None = None):
                 "score": float(score)
             })
             
-        return str(response), sources
+        # Keywords para resaltado en frontend (incluyendo expansión léxica/sinónimos)
+        keywords = list(set(plan.must_have + plan.entities + plan.expansion + plan.exact_phrases))
+        
+        return str(final_response), sources, keywords
     except Exception as e:
         err = str(e)
         print(f"[Orchestrator] ERROR CRÍTICO: {err}")

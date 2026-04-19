@@ -111,33 +111,33 @@ def semantic_search(
 
 def get_all_chunks(where: dict | None = None) -> list[dict]:
     """
-    Recupera todos los chunks (para construir índice BM25 en memoria).
-    Atención: con 1.5M frases agrupadas en decenas de miles de chunks,
-    puede ocupar bastante RAM. Se llama una sola vez al inicio.
-
-    Returns:
-        lista de dicts con keys: id, document, metadata
+    Recupera todos los chunks (paginado para evitar errores de SQLite).
     """
     col = get_collection()
     total = col.count()
     if total == 0:
         return []
 
-    results = col.get(
-        where=where,
-        include=["documents", "metadatas"],
-        limit=total,
-    )
-
+    batch_size = 500
     output: list[dict] = []
-    for i, chunk_id in enumerate(results["ids"]):
-        output.append(
-            {
-                "id": chunk_id,
-                "document": results["documents"][i],
-                "metadata": results["metadatas"][i],
-            }
+    
+    for offset in range(0, total, batch_size):
+        results = col.get(
+            where=where,
+            include=["documents", "metadatas"],
+            limit=batch_size,
+            offset=offset
         )
+        
+        for i, chunk_id in enumerate(results["ids"]):
+            output.append(
+                {
+                    "id": chunk_id,
+                    "document": results["documents"][i],
+                    "metadata": results["metadatas"][i],
+                }
+            )
+            
     return output
 
 
