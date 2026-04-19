@@ -24,21 +24,36 @@ class QueryAnalyzer:
         manual_quotes = re.findall(r'"([^"]*)"', query)
         
         prompt = f"""
-Eres un Arquitecto de Búsqueda experto en debates parlamentarios. Tu tarea es descomponer la consulta en un plan de búsqueda estructurado (JSON).
+Eres un Analista Lexicográfico y Experto en Debates del Parlamento de Canarias. Tu misión es transformar una consulta en lenguaje natural en un 'SearchPlan' técnico altamente preciso para un sistema RAG.
 
-IMPORTANTE - CATEGORÍAS DE BÚSQUEDA:
-1. 'sequential_phrases': Bloques donde el orden y las palabras vacías Importan (ej: "Proposición no de ley", "Comisión de Economía"). NO ELIMINES "no", "de", "la".
-2. 'literal_terms': Palabras que el usuario quiere exactas, sin lematizar (ej: si busca "subvencionadas", no buscar "subvención").
-3. 'semantic_concepts': Ideas generales para expandir con sinónimos.
+REGLAS DE CATEGORIZACIÓN:
+1. 'sequential_phrases': Úsalo para N-gramas donde el orden y las palabras vacías (de, la, no, el) son CRÍTICOS para el significado legal. 
+   - Ej: "Proposición no de ley", "Comisión de Sanidad", "Diario de Sesiones".
+2. 'literal_terms': Palabras que NO deben lematizarse. El usuario busca la forma morfológica exacta.
+   - Ej: "encarecimiento" (no buscar 'caro'), "subvencionadas" (específico femenino plural).
+3. 'semantic_concepts': Conceptos generales. DEBES realizar EXPANSIÓN LÉXICA (sinónimos/temas relacionados) para alimentar al buscador.
+   - Ej: si busca "cesta de la compra", expande a ["inflación", "precios", "coste de vida"].
+4. 'entities': Nombres de diputados, instituciones o leyes específicas (ej: "Casimiro Curbelo", "Copecan", "Ley del Suelo").
+5. 'hypothetical_answer': Escribe un párrafo breve (2 frases) que simule una respuesta ideal. Esto mejora la recuperación semántica (técnica HyDE).
 
-EJEMPLO:
+EJEMPLOS:
+Consulta: "¿Por qué está tan cara la cesta de la compra?"
+Respuesta: {{
+  "semantic_concepts": ["cesta de la compra", "inflación", "precios", "coste de vida", "economía doméstica"],
+  "literal_terms": ["cara"],
+  "sequential_phrases": [],
+  "entities": [],
+  "hypothetical_answer": "El encarecimiento de la cesta de la compra se debe al aumento de la inflación y los costes de transporte en Canarias.",
+  "intent": "hybrid"
+}}
+
 Consulta: "Dime qué se aprobó sobre la tasa turística en una proposición no de ley."
 Respuesta: {{
-  "semantic_concepts": ["aprobación", "impuestos", "turismo"],
+  "semantic_concepts": ["aprobación", "turismo", "normativa", "impuestos"],
   "literal_terms": ["tasa turística"],
   "sequential_phrases": ["proposición no de ley"],
   "entities": [],
-  "hypothetical_answer": "Se ha debatido y aprobado la implementación de una tasa turística mediante una proposición no de ley para regular el impacto del sector.",
+  "hypothetical_answer": "El Parlamento debatió la creación de una tasa turística mediante una proposición no de ley para financiar la sostenibilidad.",
   "intent": "hybrid"
 }}
 

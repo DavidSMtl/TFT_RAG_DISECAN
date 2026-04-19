@@ -23,13 +23,18 @@ class LLMReranker:
         prompt = f"""
 Evalúa la relevancia de los siguientes fragmentos para responder a la consulta: "{query}".
 
-Devuelve exclusivamente una lista de índices ordenados por RELEVANCIA, del más útil al menos útil.
+CRITERIOS DE RELEVANCIA:
+1. **Prioridad Máxima**: Fragmentos que contengan frases exactas o términos técnicos mencionados (ej: "Proposición no de ley").
+2. **Relevancia Semántica**: Fragmentos que expliquen razones, causas o consecuencias del tema consultado.
+3. **Calidad del Orador**: Declaraciones directas de diputados son más valiosas que menciones administrativas.
+
+Devuelve exclusivamente una lista de índices [id] ordenados de MAYOR a MENOR relevancia.
 Formato: [indice, indice, ...]
 
-Fragmentos:
+FRAGMENTOS A EVALUAR:
 {context_str}
 
-Orden de relevancia (solo la lista):
+ORDEN DE RELEVANCIA (SOLO LA LISTA JSON):
 """
         try:
             response = self.llm.complete(prompt)

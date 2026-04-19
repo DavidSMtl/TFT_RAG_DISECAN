@@ -1,107 +1,101 @@
-# TFT_RAG_DISECAN
+# DiSeCan Agéntic RAG 🏛️🤖
 
-Trabajo de Fin de Título pensado para realizar una arquitectura RAG sobre documentos del parlamento canario a gran escala.
+Advanced Retrieval-Augmented Generation (RAG) system tailored for the **Parliamentary Corpus of the Canary Islands**. This project implements an **Agentic RAG pipeline** that combines local LLMs, vector search, and custom mathematical SQL logic to achieve high precision in legislation-heavy environments.
 
-## Architecture & Entity-Relationship Modeling
-
-### System Architecture
-![Architecture Diagram](docs/design/Architecture-1.svg)
-
-### Data Modeling & Context Layer
-![Entity Relation Diagram](docs/design/EntityRelation-1.svg)
+![Agentic RAG Flow](docs/agentic_rag_flow.md) *(Click to see the detailed Mermaid diagram)*
 
 ---
 
-## Usage Guide
+## 🚀 Key Innovations
 
-Welcome to the **DiSeCan LLM** project! This repository contains a Retrieval-Augmented Generation (RAG) architecture built to query large-scale parliamentary documents from the Canary Islands. 
+### 1. Agentic Query Transformer
+The system doesn't just "search words". It uses a **Query Analyzer LLM** to route user intent into three distinct channels:
+- **Semantic Concepts**: General ideas expanded with lemmas and synonyms.
+- **Literal Terms**: Quotes or specific words that must match exactly (ignoring lemmatization).
+- **Sequential Phrases**: Parliamentary N-grams (e.g., *"Proposición no de ley"*) protected from stop-word filtering.
 
-Currently, the project features a responsive web frontend (HTML/CSS/JS) served by a Flask backend REST API, ready to be connected to the core LlamaIndex/RAG pipeline.
+### 2. Mathematical Sequential Search (Positional SQL)
+To solve the "stop-word blind spot", we implemented a custom SQL engine in `db.py` that checks for the **mathematical adjacency** of words using the `posElementoFrase` column. This allows finding specific legal phrases even if they consist mostly of common words.
 
-### Prerequisites
+### 3. Hybrid RRF Fusion
+Combines **ChromaDB (Semantic)** and **MySQL (Lexical)** results using **Reciprocal Rank Fusion (RRF)**, ensuring the most relevant documents appear first regardless of the search method.
 
-To run this project, make sure you have installed on your system:
-- **Python 3.11** or higher.
-- [**uv**](https://github.com/astral-sh/uv) (Extremely fast Python package installer and resolver).
+---
 
-### Installation
+## 🛠️ Prerequisites
 
-1. Clone the repository and navigate to the project directory:
-   ```bash
-   cd TFT_RAG_DISECAN
-   ```
+- **Python 3.11+**
+- [**uv**](https://github.com/astral-sh/uv) (Fast Python package manager)
+- **Ollama** (Running locally for Qwen 3B/7B models)
+- **Docker & Docker Compose** (For MySQL database)
 
-2. Install the necessary dependencies using `uv`. This will automatically install requirements like Flask and Flask-CORS as defined in `pyproject.toml`:
-   ```bash
-   uv sync
-   ```
+---
 
-### Running the Application
+## ⚙️ Setup Guide
 
-To start the backend server and serve the user interface:
+### 1. Environment Configuration
+Create a `.env` file in the root directory:
+```env
+# Database
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=disecan
+DB_USER=root
+DB_PASS=your_password
 
-1. Execute the main entry point:
-   ```bash
-   uv run python src/main.py
-   ```
+# Models
+OLLAMA_MODEL=qwen2.5:3b
+OLLAMA_BASE_URL=http://localhost:11434
+```
 
-2. Once the server is running, the terminal will indicate that Flask is active.
-3. Open your web browser and navigate to:
-   **[http://127.0.0.1:5000](http://127.0.0.1:5000)**
+### 2. Infrastructure
+Launch the MySQL database container:
+```bash
+docker compose up -d
+```
+*Note: The first run will import the database dump located in `database/init/` (if provided).*
 
-4. *Optional*: For development purposes, you can resize your browser window to test the responsive mobile view (under `768px` width), which swaps the fixed sidebar for a mobile-friendly slide-out menu.
+### 3. Dependencies
+Install the Python environment:
+```bash
+uv sync
+```
 
-### Project Structure Overview
+### 4. Vector Ingestion
+Once the MySQL database is ready, generate the vector embeddings in ChromaDB:
+```bash
+uv run python src/backend/ingestion.py
+```
+*Tip: Embeddings are forced to **CPU** by default to prevent VRAM crashes while Ollama is running.*
 
-- `src/main.py`: Entry point for the application. Starts the Flask server.
-- `src/backend/app.py`: Flask REST API serving endpoints for the chat interface and the static frontend files.
-- `src/frontend/`: Contains the vanilla HTML, CSS, and JavaScript files rendering the UI.
-- `docs/design/`: Diagrams and mockups of the proposed architecture.
+---
 
+## 🖥️ Usage
 
+### Start the Backend Server
+```bash
+uv run python src/main.py
+```
 
-## database/init/
+### Access the Web Interface
+Open your browser at: **[http://127.0.0.1:5000](http://127.0.0.1:5000)**
 
-Esta carpeta contiene los scripts SQL que MySQL ejecuta **automáticamente**
-la primera vez que se levanta el contenedor (cuando el volumen está vacío).
+---
 
-## Cómo cargar el dump
+## 📂 Project Structure
 
-1. Copia el archivo `DumpDiSeCan.sql` (el dump de 1 GB) a esta carpeta:
+- `src/backend/`: Core logic (Orchestrator, Retrievers, SQL Logic).
+- `src/frontend/`: Responsive UI (HTML/JS/CSS).
+- `database/`: SQL scripts for initial setup and sampling.
+- `docs/`: Documentation and architecture diagrams.
 
-   ```
-   database/
-   └── init/
-       └── DumpDiSeCan.sql   ← aquí
-   ```
+## 🧪 Utilities
 
-2. Levanta el contenedor:
+- **`database/create_sample.py`**: Extract a small SQL sample from a large DB for local dev.
+- **`src/backend/lemmatizer.py`**: Interface with the external lemmatization service.
 
-   ```bash
-   docker compose up -d
-   ```
+---
 
-3. La primera vez tardará varios minutos (importación del dump).
-   Puedes ver el progreso con:
-
-   ```bash
-   docker logs -f disecan-mysql
-   ```
-
-4. Cuando veas `ready for connections` en los logs, la BD está lista.
-
-## Notas
-
-- Los archivos `.sql` en esta carpeta se ejecutan **en orden alfabético**.  
-  Si necesitas cargar primero la estructura y luego los datos, nómbralos:
-  - `01_estructura.sql`
-  - `02_datos.sql`
-
-- Los dumps `.sql.gz` también son soportados directamente por MySQL Docker.
-  Si comprimes el dump, puedes ahorrarte espacio significativo:
-
-  ```bash
-  gzip DumpDiSeCan.sql   # genera DumpDiSeCan.sql.gz (~100-200 MB)
-  ```
-
-- Esta carpeta está en `.gitignore` para evitar subir el dump al repositorio.
+## ⚠️ Important Notes
+- **Local Execution**: This project is designed to be 100% local. Ensure Ollama is running before starting the server.
+- **Hardware**: For optimal performance (Reranking + Synthesis), at least 16GB RAM and a decent GPU (8GB+ VRAM) are recommended, though it can run on CPU.

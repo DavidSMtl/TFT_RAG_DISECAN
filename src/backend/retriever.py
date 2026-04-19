@@ -31,7 +31,7 @@ from backend.lemmatizer import get_lemas
 from backend.query_analyzer import SearchPlan
 
 
-# ── SQL Lexical Retriever ──────────────────────────────────────────────────────
+# SQL Lexical Retriever 
 
 
 class SQLLexicalRetriever(BaseRetriever):
@@ -167,7 +167,7 @@ class SQLLexicalRetriever(BaseRetriever):
         return results
 
 
-# ── Cache Global ───────────────────────────────────────────────────────────────
+# Cache Global
 
 _CACHED_CHROMA_CHUNKS: list[dict] | None = None
 
@@ -182,7 +182,7 @@ def _get_cached_chunks() -> list[dict]:
     return _CACHED_CHROMA_CHUNKS
 
 
-# ── Ensemble Retriever ─────────────────────────────────────────────────────────
+# Ensemble Retriever 
 
 
 def get_ensemble_retriever(
@@ -232,7 +232,7 @@ def get_ensemble_retriever(
     return ensemble_retriever
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# Helpers 
 
 
 def _parse_filters_to_llamaindex(filtros: dict):

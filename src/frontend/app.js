@@ -78,13 +78,18 @@ function addBotMessage(answer, sources, keywords) {
 
             return `
                 <div class="source-item">
+                    <div class="source-header">
+                        <span class="source-speaker">👤 ${s.speaker}</span>
+                        <span class="score-badge">${s.score}% Relevancia</span>
+                    </div>
+                    
                     <div class="source-fragment">
-                        <strong>[Fuente ${index + 1}]</strong> <em>${s.speaker}:</em> "${highlightedFragment}"
+                        "${highlightedFragment}"
                     </div>
                     
                     ${s.context ? `
                         <button class="context-toggle-btn" onclick="document.getElementById('${contextId}').classList.toggle('open')">
-                            🔍 Ver contexto del párrafo
+                            🔍 Mostrar contexto completo
                         </button>
                         <div id="${contextId}" class="source-context">
                             ${highlightedContext}
@@ -92,19 +97,20 @@ function addBotMessage(answer, sources, keywords) {
                     ` : ""}
 
                     <div class="source-meta">
-                        Fecha: ${s.date} · Legislatura: ${s.legislature} ·
-                        <a href="${s.pdf_url}" target="_blank">📄 Ver PDF Original</a>
+                        <span>📅 ${s.date}</span>
+                        <span>🏛️ ${s.legislature}</span>
+                        <a href="${s.pdf_url}" target="_blank">📄 Diario de Sesiones (PDF)</a>
                     </div>
                 </div>
             `;
         }).join("");
 
         sourcesHtml = `
-            <button class="sources-btn" onclick="this.nextElementSibling.classList.toggle('open')">
-                Ver Fuentes Oficiales (${sources.length})
-            </button>
-            <div class="sources-content">
-                ${fragmentsHtml}
+            <div style="margin-top: 1.5rem; border-top: 1px solid #ddd; padding-top: 1rem;">
+                <h4 style="color: #004b8d; margin-bottom: 0.5rem; font-size: 0.9rem;">📚 FUENTES RELACIONADAS</h4>
+                <div class="sources-content open">
+                    ${fragmentsHtml}
+                </div>
             </div>
         `;
     }

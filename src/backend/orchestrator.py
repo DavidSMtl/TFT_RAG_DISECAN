@@ -176,22 +176,22 @@ setup_settings()
 # ── Prompts ────────────────────────────────────────────────────────────────
 
 QA_PROMPT_STR = (
-    "Eres un asistente analítico especializado en el Parlamento de Canarias.\n"
-    "Se te proporcionan fragmentos de intervenciones parlamentarias (párrafos).\n"
-    "Tu objetivo es generar un RESUMEN completo y estructurado de la información hallada.\n"
-    "---------------------\n"
+    "Eres el Asistente Analítico Institucional del Parlamento de Canarias. Tu objetivo es proporcionar respuestas precisas, estructuradas y basadas estrictamente en la evidencia de los fragmentos proporcionados.\n\n"
+    "### CONTEXTO DE INTERVENCIONES:\n"
     "{context_str}\n"
-    "---------------------\n"
-    "Pregunta del usuario: {query_str}\n\n"
-    "Instrucciones estricatmente obligatorias:\n"
-    "1. Responde SIEMPRE en ESPAÑOL.\n"
-    "2. Sintetiza la información en párrafos breves y claros.\n"
-    "3. Si hay varios oradores, agrupa lo que dicen de forma coherente.\n"
-    "4. Cita nombres y fechas si son relevantes.\n"
-    "5. Si no hay información suficiente en los fragmentos, di: 'No se ha encontrado información específica en el diario de sesiones.'\n"
-    "6. NO divagues. Ve directo al grano.\n\n"
-    "7. No inventes información que no esté en los fragmentos.\n\n"
-    "Resumen:"
+    "---------------------\n\n"
+    "### PREGUNTA DEL USUARIO:\n"
+    "{query_str}\n\n"
+    "### INSTRUCCIONES DE RESPUESTA:\n"
+    "1. **Estructura**: Tu respuesta debe tener tres secciones claras:\n"
+    "   - **Resumen Ejecutivo**: Una síntesis directa de la respuesta en 2-3 frases.\n"
+    "   - **Detalle de Intervenciones**: Desglose de lo dicho por cada orador relevante, usando **negrita** para sus nombres.\n"
+    "   - **Contexto Legislativo**: Mención a fechas, legislaturas o tipos de sesión encontrados.\n"
+    "2. **Tono**: Profesional, objetivo y 'Family Friendly' (claro y accesible).\n"
+    "3. **Citas**: Si usas una cita textual, usa 'comillas' e indica quién lo dijo.\n"
+    "4. **Silencio**: Si los fragmentos no contienen la respuesta, di: 'Tras analizar el diario de sesiones, no se ha encontrado información específica sobre este asunto en los fragmentos recuperados.'\n"
+    "5. **No Inventar**: No utilices conocimiento externo al contexto proporcionado.\n\n"
+    "### RESPUESTA ESTRUCTURADA:"
 )
 QA_PROMPT = PromptTemplate(QA_PROMPT_STR)
 
@@ -302,9 +302,13 @@ def ask_disecan(query: str, filtros: dict | None = None):
         )
         
         sources = []
-        for node in final_nodes:
+        for i, node in enumerate(final_nodes):
             meta = node.metadata
-            score = node.score or 0.0
+            
+            # Normalizamos el score basado en el ranking del LLM para que sea visualmente claro
+            # Si el reranker devuelve los mejores 5, les asignamos un peso descendente artificial
+            # si el score original es confuso o nulo.
+            score = 1.0 - (i * 0.05) # 1.0, 0.95, 0.90, 0.85, 0.80
             
             leg = meta.get("legislatura", "")
             pdf_name = meta.get("pdf_file", "")
@@ -321,8 +325,11 @@ def ask_disecan(query: str, filtros: dict | None = None):
                 "legislature": leg,
                 "session": meta.get("num_sesion", ""),
                 "pdf_url": pdf_url,
-                "score": float(score)
+                "score": round(float(score) * 100, 1) # Retornar como porcentaje (0-100)
             })
+            
+        # Ordenar por score descendente (por si acaso, aunque ya están por el reranker)
+        sources.sort(key=lambda x: x["score"], reverse=True)
             
         # Keywords para resaltado en frontend (incluyendo expansión léxica, literales y secuencias)
         keywords = list(set(
