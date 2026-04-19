@@ -47,9 +47,13 @@ Respuesta (solo JSON):
 """
         try:
             response = self.llm.complete(prompt)
-            clean_res = re.sub(r'```json|```', '', str(response)).strip()
-            data = json.loads(clean_res)
-            
+            # Sanatizar entidades para asegurar que son strings (el LLM a veces devuelve dicts)
+            raw_entities = data.get("entities", [])
+            data["entities"] = [
+                e["name"] if isinstance(e, dict) and "name" in e else str(e) 
+                for e in raw_entities
+            ]
+
             # Retrocompatibilidad y limpieza
             data["must_have"] = data.get("semantic_concepts", [])
             data["expansion"] = data.get("literal_terms", [])
