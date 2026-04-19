@@ -321,18 +321,17 @@ def lexical_search_advanced(
 ) -> list[dict]:
     """
     Búsqueda léxica avanzada que soporta:
-    - Palabras obligatorias (must_have).
-    - Entidades (prioridad alta).
-    - Frases exactas (secuencia de palabras).
-    - Pesado por categoría (Sustantivos/Verbos tienen más peso).
+    1. Conceptos Semánticos: Búsqueda por lemas (con expansión previa).
+    2. Literales: Búsqueda exacta en columna 'palabra'.
+    3. Secuenciales: Búsqueda matemática por posición (N-gramas parlamentarios).
     """
-    if not plan.must_have and not plan.exact_phrases and not plan.entities:
+    if not any([plan.semantic_concepts, plan.literal_terms, plan.sequential_phrases, plan.must_have]):
         return []
 
-    # 1. Preparar términos básicos (lemas de must_have + entities)
-    base_terms = [t.lower() for t in plan.must_have + plan.entities]
+    # 1. Preparar términos básicos
+    semantic_terms = [t.lower() for t in (plan.semantic_concepts + plan.must_have + plan.entities)]
+    literal_terms = [t.lower() for t in plan.literal_terms]
     
-    # 2. Filtros de documentos
     doc_clauses = []
     doc_params = []
     if filtros:
@@ -344,68 +343,94 @@ def lexical_search_advanced(
             doc_params.append(int(ns))
     where_doc = "AND " + " AND ".join(doc_clauses) if doc_clauses else ""
 
-    # 3. Construcción de Query con Pesos
-    # Heurística: Categorías que empiezan por 3 (Nombres) o 1 (Verbos) valen x2/x3
-    if base_terms:
-        # Usamos un conjunto de placeholders único para evitar parámetros duplicados innecesarios
-        ph_lemas = ", ".join(["%s"] * len(base_terms))
-        where_terms = f"(LOWER(p.lema) IN ({ph_lemas}) OR LOWER(p.palabra) IN ({ph_lemas}))"
-        # Pasamos la lista de términos dos veces (una para lema, otra para palabra)
-        params = base_terms + base_terms
-    else:
-        # Fallback para exact_phrases sin términos base (poco común)
-        all_words = []
-        for phrase in plan.exact_phrases:
-            all_words.extend(re.findall(r"\w+", phrase.lower()))
-        if all_words:
-            ph_lemas = ", ".join(["%s"] * len(all_words))
-            where_terms = f"(LOWER(p.lema) IN ({ph_lemas}) OR LOWER(p.palabra) IN ({ph_lemas}))"
-            params = all_words + all_words
-        else:
-            return []
+    results_map = {} # id_frase -> dict con score y datos
     
-    sql = f"""
-        SELECT
-            f.idFrases      AS id_frase,
-            f.orador        AS orador,
-            f.idDocumento   AS id_documento,
-            d.legislatura   AS legislatura,
-            d.fecha         AS fecha,
-            d.numSesion     AS num_sesion,
-            SUM(CASE 
-                WHEN p.categoria BETWEEN 3000 AND 3999 THEN 5 -- Nombres (Sustantivos) - Aumentado peso
-                WHEN p.categoria BETWEEN 1000 AND 1999 THEN 3 -- Verbos
-                ELSE 1 
-            END) AS score,
-            COUNT(DISTINCT p.lema) AS n_distinct_matches
-        FROM palabras p
-        JOIN frases f   ON p.idFrase = f.idFrases
-        JOIN documentos d ON f.idDocumento = d.idDocumento
-        WHERE {where_terms}
-        {where_doc}
-        GROUP BY f.idFrases, f.orador, f.idDocumento, d.legislatura, d.fecha, d.numSesion
-        HAVING score > 0
-        ORDER BY score DESC, n_distinct_matches DESC
-        LIMIT %s
-    """
-    
-    params += doc_params + [top_k * 5]
-
     with get_connection() as conn, get_cursor(conn) as cur:
-        cur.execute(sql, params)
-        rows = [_fix_encoding(r) for r in cur.fetchall()]
+        # --- A. Búsqueda SEMÁNTICA (Lemas) y LITERAL (Palabras) ---
+        if semantic_terms or literal_terms:
+            clauses = []
+            params = []
+            if semantic_terms:
+                ph = ", ".join(["%s"] * len(semantic_terms))
+                clauses.append(f"LOWER(p.lema) IN ({ph})")
+                params.extend(semantic_terms)
+            if literal_terms:
+                ph = ", ".join(["%s"] * len(literal_terms))
+                clauses.append(f"LOWER(p.palabra) IN ({ph})")
+                params.extend(literal_terms)
+            
+            where_words = " OR ".join(clauses)
+            sql_words = f"""
+                SELECT f.idFrases, f.orador, f.idDocumento, d.legislatura, d.fecha, d.numSesion,
+                       SUM(CASE 
+                           WHEN p.categoria BETWEEN 3000 AND 3999 THEN 5 
+                           WHEN p.categoria BETWEEN 1000 AND 1999 THEN 3 
+                           ELSE 1 END) as score
+                FROM palabras p
+                JOIN frases f ON p.idFrase = f.idFrases
+                JOIN documentos d ON f.idDocumento = d.idDocumento
+                WHERE ({where_words}) {where_doc}
+                GROUP BY f.idFrases
+            """
+            cur.execute(sql_words, params + doc_params)
+            for row in cur.fetchall():
+                fixed = _fix_encoding(row)
+                if fixed:
+                    results_map[fixed["id_frase" if "id_frase" in fixed else "idFrases"]] = fixed
 
-    # 4. Post-filtro para frases exactas (si existen)
-    if plan.exact_phrases:
-        final_rows = []
-        for row in rows:
-            text = get_context_around_frase(row["id_frase"], window=1).lower()
-            match_exact = any(phrase.lower() in text for phrase in plan.exact_phrases)
-            if match_exact:
-                row["score"] += 100 # Bonus masivo por match exacto de frase
-            final_rows.append(row)
-        
-        final_rows.sort(key=lambda x: x["score"], reverse=True)
-        return final_rows[:top_k]
+        # --- B. Búsqueda SECUENCIAL (Orden matemático) ---
+        for phrase in plan.sequential_phrases:
+            words = re.findall(r"\w+", phrase.lower())
+            if len(words) < 2: continue
+            
+            # Construimos un JOIN dinámico: p1 JOIN p2 ON p2.pos = p1.pos + 1 ...
+            joins = []
+            wheres = []
+            phrase_params = []
+            for i, word in enumerate(words):
+                alias = f"p{i+1}"
+                if i == 0:
+                    joins.append(f"palabras {alias}")
+                else:
+                    prev_alias = f"p{i}"
+                    joins.append(f"JOIN palabras {alias} ON {alias}.idFrase = {prev_alias}.idFrase AND {alias}.posElementoFrase = {prev_alias}.posElementoFrase + 1")
+                wheres.append(f"LOWER({alias}.palabra) = %s")
+                phrase_params.append(word)
+            
+            sql_seq = f"""
+                SELECT DISTINCT p1.idFrase as idPhr
+                FROM {" ".join(joins)}
+                WHERE {" AND ".join(wheres)}
+            """
+            cur.execute(sql_seq, phrase_params)
+            seq_ids = [r["idPhr"] for r in cur.fetchall()]
+            
+            if seq_ids:
+                ph_ids = ", ".join(["%s"] * len(seq_ids))
+                sql_data = f"""
+                    SELECT f.idFrases, f.orador, f.idDocumento, d.legislatura, d.fecha, d.numSesion
+                    FROM frases f
+                    JOIN documentos d ON f.idDocumento = d.idDocumento
+                    WHERE f.idFrases IN ({ph_ids}) {where_doc}
+                """
+                cur.execute(sql_data, seq_ids + doc_params)
+                for row in cur.fetchall():
+                    fixed = _fix_encoding(row)
+                    if not fixed: continue
+                    fid = fixed["idFrases"]
+                    if fid in results_map:
+                        results_map[fid]["score"] += 100 # Super bonus por frase exacta
+                    else:
+                        fixed["score"] = 120 # Base alta para frases exactas
+                        results_map[fid] = fixed
 
-    return rows[:top_k]
+    # 5. Finalizar y ordenar
+    final_list = list(results_map.values())
+    for item in final_list:
+        # Normalizar nombres de llaves
+        if "idFrases" in item: item["id_frase"] = item.pop("idFrases")
+        if "idDocumento" in item: item["id_documento"] = item.pop("idDocumento")
+        if "numSesion" in item: item["num_sesion"] = item.pop("numSesion")
+
+    final_list.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return final_list[:top_k]

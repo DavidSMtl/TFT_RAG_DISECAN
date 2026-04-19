@@ -324,8 +324,15 @@ def ask_disecan(query: str, filtros: dict | None = None):
                 "score": float(score)
             })
             
-        # Keywords para resaltado en frontend (incluyendo expansión léxica/sinónimos)
-        keywords = list(set(plan.must_have + plan.entities + plan.expansion + plan.exact_phrases))
+        # Keywords para resaltado en frontend (incluyendo expansión léxica, literales y secuencias)
+        keywords = list(set(
+            plan.semantic_concepts + 
+            plan.literal_terms + 
+            plan.sequential_phrases + 
+            plan.entities +
+            plan.must_have +
+            plan.exact_phrases
+        ))
         
         return str(final_response), sources, keywords
     except Exception as e:

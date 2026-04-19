@@ -83,21 +83,23 @@ class SQLLexicalRetriever(BaseRetriever):
         
         if not plan:
             lemas = get_lemas(query)
-            plan = SearchPlan(must_have=lemas, intent="hybrid")
+            plan = SearchPlan(semantic_concepts=lemas, intent="hybrid")
             print(f"[SQLLexical] Buscando lemas simples: {lemas}")
         else:
-            # 1. Expandir diccionario de intenciones usando el Lematizador
-            # Combinamos palabras obligatorias y expansión técnica
-            all_raw_terms = plan.must_have + plan.expansion + plan.entities
+            # 1. Expandir solo conceptos semánticos y entidades usando el Lematizador
+            # NO lematizamos secuenciales ni literales (perderíamos el orden/forma exacta)
+            semantic_to_lematize = plan.semantic_concepts + plan.entities
             
-            # Lematizamos profundamente cada término para asegurar match con DiSeCan
-            # Eliminamos duplicados
             deep_lemas = []
-            for term in all_raw_terms:
+            for term in semantic_to_lematize:
                 deep_lemas.extend(get_lemas(term))
             
-            plan.must_have = list(set(deep_lemas))
-            print(f"[SQLLexical] Diccionario de Intenciones Lematizado: {plan.must_have}")
+            plan.semantic_concepts = list(set(deep_lemas))
+            print(f"[SQLLexical] Conceptos Lematizados: {plan.semantic_concepts}")
+            if plan.sequential_phrases:
+                print(f"[SQLLexical] Secuencias Protegidas: {plan.sequential_phrases}")
+            if plan.literal_terms:
+                print(f"[SQLLexical] Términos Literales: {plan.literal_terms}")
 
         # 2. Buscar frases que cumplen el plan (en MySQL)
         sql_matches = lexical_search_advanced(
