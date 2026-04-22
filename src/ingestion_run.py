@@ -12,14 +12,16 @@ import argparse
 import sys
 from pathlib import Path
 
-# Aseguramos que src/ esté en el path
-sys.path.insert(0, str(Path(__file__).parent))
+# Aseguramos que la raíz del proyecto esté en el PYTHONPATH
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root / "src"))
 
 from backend.ingestion import run_ingestion
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pipeline de ingestión DiSeCan → ChromaDB")
+    parser = argparse.ArgumentParser(description="Pipeline de ingestión DiSeCan -> ChromaDB")
     parser.add_argument("--legislatura", type=str, default=None, help="Filtrar por legislatura (ej: X)")
     parser.add_argument("--fecha-desde", type=str, default=None, help="Fecha inicio YYYY-MM-DD")
     parser.add_argument("--fecha-hasta", type=str, default=None, help="Fecha fin YYYY-MM-DD")

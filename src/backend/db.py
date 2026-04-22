@@ -53,6 +53,10 @@ def get_documentos(filtros: dict | None = None) -> list[dict]:
     clauses, params = [], []
     if leg := filtros.get("legislatura"):
         clauses.append("legislatura = %s"); params.append(leg)
+    if f_desde := filtros.get("fecha_desde"):
+        clauses.append("fecha >= %s"); params.append(f_desde)
+    if f_hasta := filtros.get("fecha_hasta"):
+        clauses.append("fecha <= %s"); params.append(f_hasta)
     where = "WHERE " + " AND ".join(clauses) if clauses else ""
     sql = f"SELECT * FROM documentos {where} ORDER BY fecha ASC"
     with get_connection() as conn, get_cursor(conn) as cur:
