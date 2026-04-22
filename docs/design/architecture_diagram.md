@@ -1,48 +1,47 @@
 ```mermaid
 graph TD
-    %% ----- ESTILOS -----
-    classDef database fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0f172a;
-    classDef process fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#0f172a;
-    classDef ai fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#0f172a;
-    classDef user fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#0f172a;
-    classDef interface fill:#f1f5f9,stroke:#475569,stroke-width:2px,color:#0f172a;
-    classDef output fill:#ffffff,stroke:#94a3b8,stroke-width:2px,stroke-dasharray: 5 5,color:#0f172a;
+    %% ----- ESTILOS PREMIUM -----
+    classDef quest fill:#f8fafc,stroke:#1e293b,stroke-width:3px,color:#0f172a,font-size:16px;
+    classDef process fill:#fff7ed,stroke:#c2410c,stroke-width:2px,color:#431407;
+    classDef db fill:#eff6ff,stroke:#1d4ed8,stroke-width:2px,color:#1e3a8a;
+    classDef ai fill:#faf5ff,stroke:#7e22ce,stroke-width:2px,color:#4c1d95;
+    classDef fusion fill:#ecfdf5,stroke:#047857,stroke-width:2px,color:#064e3b;
+    classDef output fill:#ffffff,stroke:#64748b,stroke-width:2px,stroke-dasharray: 5 5,color:#0f172a;
 
-    %% ----- INGESTA -----
-    subgraph Ingesta [1. Fase de Ingesta: Reconstrucción Bottom-Up]
-        DB_SQL[(MySQL: DiSeCan)]:::database -- "1. Consulta de palabras/frases" --> RECON(Script de Reconstrucción):::process
-        RECON -- "2. Formación natural" --> CHUNKS{Párrafos de Texto}:::process
-        CHUNKS -- "3. Inferencia Embeddings" --> EMB(Modelo ROBERTalex):::ai
-        EMB -- "4. Indexación" --> VDB[(ChromaDB: Vectores)]:::database
+    %% ----- INICIO -----
+    START["<b>Pregunta en Lenguaje Natural</b>"]:::quest
+
+    %% ----- CAMINO 1: RAG TRADICIONAL -----
+    START --> BUSQ_RAG["<b>Motor RAG</b>"]:::process
+    BUSQ_RAG --> VEC_PREG[Vectorización de la Pregunta]:::ai
+    VEC_PREG --> CONS_CTX["Consulta de Contexto <br/><i>(Búsqueda Vectorial)</i>"]:::db
+    CONS_CTX --> LIST_CHUNKS[Lista de Chunks]:::process
+
+    %% ----- CAMINO 2: DISECAN + SQL -----
+    START --> PROC_LEMAS[Lemas + Quitar Stopwords]:::process
+    PROC_LEMAS --> SQL_DB[(Base de Datos SQL)]:::db
+    SQL_DB --> LIST_PARRAFOS[Lista de Párrafos]:::process
+    LIST_PARRAFOS --> EMB_DIS["Embedder <br/><i>(DiSeCan a Vectores)</i>"]:::ai
+
+    %% ----- CONFLUENCIA Y GENERACIÓN -----
+    LIST_CHUNKS --> FUSION["<b>Comparación o Fusión</b>"]:::fusion
+    EMB_DIS --> FUSION
+
+    FUSION --> LLM("<b>LLM</b>"):::ai
+    LLM --> RESP{Respuesta Final}:::output
+
+    %% Notas de flujo
+    subgraph Rama_RAG [Búsqueda Semántica Vectorial]
+        BUSQ_RAG
+        VEC_PREG
+        CONS_CTX
+        LIST_CHUNKS
     end
 
-    %% ----- CONSULTA -----
-    subgraph Consulta [2. Fase de Consulta: Ensemble Retriever]
-        USER((Usuario)):::user --> UI[Interfaz SPA]:::interface
-        UI --> API[Backend Flask]:::interface
-        API --> ORQ{Orquestador Híbrido}:::process
-
-        %% Ramas paralelas
-        ORQ -- "Búsqueda Léxica Exacta" --> BUS_LEX(Motor SQL / BM25):::process
-        ORQ -- "Búsqueda Semántica" --> BUS_SEM(Motor Vectorial):::process
-
-        BUS_LEX --> JOIN[Fusión Recíproca - RRF]:::process
-        BUS_SEM --> JOIN
-
-        JOIN --> RANK(Reranker: Cross-Encoder):::ai
-        RANK --> CTX[Contexto Grounded]:::process
+    subgraph Rama_DISECAN [Búsqueda Léxica y Reconstrucción]
+        PROC_LEMAS
+        SQL_DB
+        LIST_PARRAFOS
+        EMB_DIS
     end
-
-    %% ----- GENERACIÓN -----
-    subgraph Generacion [3. Fase de Generación Literal]
-        CTX --> LLM(LLM: vLLM):::ai
-        LLM --> RESP{Respuesta Final}:::output
-        RESP --> RES_IA[Resumen IA]:::output
-        RESP --> RES_LIT[Evidencia Literal]:::output
-        RESP --> RES_REF[Fuentes Oficiales referenciadas]:::output
-    end
-
-    %% ----- ENLACES ENTRE FLUJOS -----
-    DB_SQL -.-> |"Metadatos y Lemas"| BUS_LEX
-    VDB -.-> |"Similitud Matemática"| BUS_SEM
 ```
