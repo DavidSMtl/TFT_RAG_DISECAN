@@ -25,19 +25,26 @@ class Chunk:
     id_frase_inicio: int
     id_frase_fin: int
     pdf_file: str = ""
-    chunk_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    chunk_id: str = ""
+
+    def __post_init__(self):
+        if not self.chunk_id:
+            self.chunk_id = f"c_{self.id_documento}_{self.id_frase_inicio}"
 
     def to_metadata(self) -> dict:
         return {
-            "orador": self.orador or "",
+            "id_chunk": self.chunk_id,
+            "orador": self.orador or "DESCONOCIDO",
             "id_documento": self.id_documento,
             "legislatura": self.legislatura or "",
             "fecha": self.fecha or "",
             "num_sesion": self.num_sesion or 0,
             "id_frase_inicio": self.id_frase_inicio,
             "id_frase_fin": self.id_frase_fin,
-            "pdf_file": self.pdf_file or ""
+            "pdf_file": self.pdf_file or "",
+            "source": "disecan_mysql"
         }
+
 
 def _create_chunks_from_paragraphs(doc: dict, phrases: list[dict]) -> list[Chunk]:
     chunks, reader, seen_offsets = [], ByteTextReader(), set()
