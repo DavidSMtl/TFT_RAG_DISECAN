@@ -21,9 +21,9 @@ BATCH_SIZE = 64
 @lru_cache(maxsize=1)
 def _load_model(device: str | None = None) -> SentenceTransformer:
     """Carga el modelo una sola vez (singleton en memoria)."""
-    # Forzamos CPU por defecto en entornos locales para liberar VRAM para Ollama
+    # Si no se especifica, intentamos usar CUDA (GPU), de lo contrario CPU
     if device is None:
-        device = "cpu"
+        device = "cuda" if torch.cuda.is_available() else "cpu"
     
     print(f"[Embedder] Cargando modelo '{MODEL_NAME}' en dispositivo '{device}'...")
     try:

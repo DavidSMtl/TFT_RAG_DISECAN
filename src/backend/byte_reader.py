@@ -8,7 +8,7 @@ load_dotenv()
 # Configuración por defecto (basada en el análisis de DiSeCan)
 CORPUS_FILE_PATH = os.getenv("CORPUS_FILE_PATH", "./data/corpus/documentos.txt")
 PHRASES_FILE_PATH = os.getenv("PHRASES_FILE_PATH", "./data/corpus/frases.txt")
-ENCODING = "cp1252"  # Codificación original de DiSeCan (ISO-8859-1)
+ENCODING = "utf-8"  # Archivos detectados como UTF-8
 
 class ByteTextReader:
     """

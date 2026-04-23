@@ -11,6 +11,11 @@ from mysql.connector import MySQLConnection
 from mysql.connector.cursor import MySQLCursor
 from backend.byte_reader import ByteTextReader
 
+CAT_CODES = {
+    "sustantivo": 1000, "adjetivo": 1100, "adverbio": 1200, "verbo": 3000,
+    "artículo": 1700, "pronombre": 1400, "preposición": 1600, "conjunción": 1500
+}
+
 load_dotenv()
 
 _DB_CONFIG: dict[str, object] = {
@@ -80,17 +85,44 @@ def get_ids_documentos_por_filtros(filtros: dict) -> list[int] | None:
     if not filtros.get("legislatura"): return None
     return [d["idDocumento"] for d in docs]
 
-def lexical_search_chunks(lemas: list[str], filtros: dict | None = None, top_k: int = 40) -> list[dict]:
-    if not lemas: return []
-    ph = ", ".join(["%s"] * len(lemas))
-    sql = f"""
-        SELECT f.idFrases as id_frase, f.orador, f.idDocumento as id_documento, d.legislatura, d.fecha, COUNT(*) as score
-        FROM palabras p
-        JOIN frases f ON p.idFrase = f.idFrases
-        JOIN documentos d ON f.idDocumento = d.idDocumento
-        WHERE LOWER(p.lema) IN ({ph})
-        GROUP BY f.idFrases ORDER BY score DESC LIMIT %s
+def linguistic_search(lemas: list[str], top_k: int = 40) -> list[dict]:
     """
+    Búsqueda lingüística avanzada usando auto-joins para encontrar lemas en la misma frase.
+    Réplica simplificada de DatabasePattern.cs de DiSeCan.
+    """
+    if not lemas: return []
+    
+    # Limitar a máximo 4 lemas para evitar queries infinitas
+    lemas = lemas[:4]
+    
+    joins = []
+    where = []
+    params = []
+    
+    # pal1 es la tabla base
+    where.append("LOWER(pal1.lema) = %s")
+    params.append(lemas[0].lower())
+    
+    for i, lema in enumerate(lemas[1:], start=2):
+        joins.append(f"JOIN palabras pal{i} ON pal1.idFrase = pal{i}.idFrase")
+        where.append(f"LOWER(pal{i}.lema) = %s")
+        params.append(lema.lower())
+        # Opcional: añadir restricción de orden/proximidad
+        # where.append(f"pal{i}.posElementoFrase > pal{i-1}.posElementoFrase")
+
+    sql = f"""
+        SELECT f.idFrases as id_frase, f.orador, f.idDocumento as id_documento, 
+               COUNT(*) as score
+        FROM palabras pal1
+        {chr(10).join(joins)}
+        JOIN frases f ON pal1.idFrase = f.idFrases
+        WHERE {" AND ".join(where)}
+        GROUP BY f.idFrases 
+        ORDER BY score DESC 
+        LIMIT %s
+    """
+    params.append(top_k)
+    
     with get_connection() as conn, get_cursor(conn) as cur:
-        cur.execute(sql, [L.lower() for L in lemas] + [top_k])
+        cur.execute(sql, params)
         return cur.fetchall()

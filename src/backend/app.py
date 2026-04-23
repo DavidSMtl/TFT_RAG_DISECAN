@@ -43,7 +43,8 @@ from backend.orchestrator import ask_disecan, get_query_engine
 # Precarga del motor RAG al arrancar para evitar lentitud en la primera respuesta
 print("[App] Inicializando motor RAG en segundo plano...")
 try:
-    get_query_engine()
+    from backend.query_analyzer import SearchPlan
+    get_query_engine(SearchPlan())
     print("[App] Motor RAG inicializado con éxito.")
 except Exception as e:
     print(f"[App] ADVERTENCIA: Error al precargar el motor: {e}")

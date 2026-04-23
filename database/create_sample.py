@@ -54,7 +54,7 @@ def create_harmonized_sample(num_docs: int, output_sql: Path):
     with open(PHRASES_FILE, "rb") as f:
         for line_bytes in f:
             try:
-                line = line_bytes.decode("cp1252", errors="ignore")
+                line = line_bytes.decode("utf-8", errors="ignore")
                 parts = line.split('\t')
                 if not parts or not parts[0].isdigit():
                     continue
@@ -101,6 +101,12 @@ def create_harmonized_sample(num_docs: int, output_sql: Path):
 
     # 4. Generar SQL sample.sql
     output_sql.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Definimos columnas exactas para asegurar compatibilidad con el modelo original de DiSeCan
+    cols_docs = ["idDocumento", "nombreFicheroPDF", "legislatura", "fecha", "numSesion", "presidente"]
+    cols_frases = ["idFrases", "orador", "ByteInicioFrase", "ByteLongFrase", "idDocumento", "revisada", "metafora"]
+    cols_palabras = ["palabra", "lema", "categoria", "posElementoFrase", "idFrase"]
+
     lines = [
         "SET FOREIGN_KEY_CHECKS = 0;",
         "DROP TABLE IF EXISTS `palabras`;",
@@ -108,21 +114,27 @@ def create_harmonized_sample(num_docs: int, output_sql: Path):
         "DROP TABLE IF EXISTS `documentos`;",
         "",
         "CREATE TABLE `documentos` (idDocumento int PRIMARY KEY, nombreFicheroPDF varchar(100), legislatura varchar(10), fecha date, numSesion int, presidente varchar(100)) ENGINE=InnoDB;",
-        "CREATE TABLE `frases` (idFrases int PRIMARY KEY, orador varchar(250), ByteInicioFrase int, ByteLongFrase int, idDocumento int) ENGINE=InnoDB;",
+        "CREATE TABLE `frases` (idFrases int PRIMARY KEY, orador varchar(250), ByteInicioFrase int, ByteLongFrase int, idDocumento int, revisada varchar(50), metafora varchar(50)) ENGINE=InnoDB;",
         "CREATE TABLE `palabras` (palabra varchar(50), lema varchar(50), categoria int, posElementoFrase smallint, idFrase int) ENGINE=InnoDB;",
         ""
     ]
 
-    def write_inserts(table, rows):
+    def write_inserts(table, rows, valid_cols, batch_size=1000):
         if not rows: return
-        cols = ", ".join(f"`{k}`" for k in rows[0].keys())
-        for row in rows:
-            vals = ", ".join(_escape(v) for v in row.values())
-            lines.append(f"INSERT INTO `{table}` ({cols}) VALUES ({vals});")
+        col_str = ", ".join(f"`{c}`" for c in valid_cols)
+        
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i:i+batch_size]
+            values_list = []
+            for row in batch:
+                vals = ", ".join(_escape(row.get(c)) for c in valid_cols)
+                values_list.append(f"({vals})")
+            
+            lines.append(f"INSERT INTO `{table}` ({col_str}) VALUES {', '.join(values_list)};")
 
-    write_inserts("documentos", docs)
-    write_inserts("frases", harmonized_frases)
-    write_inserts("palabras", palabras)
+    write_inserts("documentos", docs, cols_docs)
+    write_inserts("frases", harmonized_frases, cols_frases)
+    write_inserts("palabras", palabras, cols_palabras)
     lines.append("SET FOREIGN_KEY_CHECKS = 1;")
     output_sql.write_text("\n".join(lines), encoding="utf-8")
 
