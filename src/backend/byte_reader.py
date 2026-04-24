@@ -8,7 +8,7 @@ load_dotenv()
 # Configuración por defecto (basada en el análisis de DiSeCan)
 CORPUS_FILE_PATH = os.getenv("CORPUS_FILE_PATH", "./data/corpus/documentos.txt")
 PHRASES_FILE_PATH = os.getenv("PHRASES_FILE_PATH", "./data/corpus/frases.txt")
-ENCODING = "latin-1"  # Los offsets originales de DiSeCan asumen Latin-1 (1 byte = 1 char)
+ENCODING = "utf-8"  # El corpus físico está en UTF-8; los offsets de byte siguen siendo correctos
 
 def fix_encoding(s: str) -> str:
     """

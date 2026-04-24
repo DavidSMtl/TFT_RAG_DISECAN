@@ -57,7 +57,7 @@ def create_harmonized_sample(num_docs: int, output_sql: Path):
         for line_bytes in f:
             try:
                 # Escaneamos como latin-1 para armonizar con el sistema original
-                line = line_bytes.decode("latin-1", errors="replace")
+                line = line_bytes.decode("utf-8", errors="replace")
                 parts = line.split('\t')
                 if not parts or not parts[0].isdigit():
                     continue
