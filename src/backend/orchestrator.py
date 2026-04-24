@@ -13,6 +13,8 @@ from backend.chroma_store import get_collection
 from backend.retriever import get_ensemble_retriever
 from backend.embedder import embed_query, embed_passages
 from backend.query_analyzer import QueryAnalyzer, SearchPlan
+from backend.byte_reader import fix_encoding
+from backend.reranker import LLMReranker
 
 # KEEP STOPWORDS as requested by the user for future advanced features
 STOPWORDS = {
@@ -46,8 +48,9 @@ QA_PROMPT = PromptTemplate(
     "{context_str}\n\nPregunta: {query_str}\n\nRespuesta estructurada (usa viñetas si hay listas):"
 )
 
-# Singleton del analizador
+# Singletons
 _ANALYZER = QueryAnalyzer()
+_RERANKER = LLMReranker()
 
 def get_query_engine(plan: SearchPlan, filtros: dict | None = None):
     """Inicializa el motor de consulta con el retriever híbrido configurado por el plan."""
@@ -69,22 +72,34 @@ def ask_disecan(query: str, filtros: dict | None = None):
     plan = _ANALYZER.analyze(query)
     print(f"[Orchestrator] Plan de búsqueda: {plan.intent} | Conceptos: {plan.semantic_concepts}")
 
-    # 2. Configurar motor con el plan
-    query_engine = get_query_engine(plan, filtros)
-    
-    # 3. Consultar. Usamos el HyDE como 'query_str' para la parte semántica
-    # pero el retriever híbrido gestionará la parte léxica con los términos literales.
-    response = query_engine.query(QueryBundle(
+    # 3. Recuperación Híbrida Manual para poder aplicar Re-ranking
+    query_bundle = QueryBundle(
         query_str=query,
         custom_embedding_strs=[plan.hypothetical_answer] if plan.hypothetical_answer else None
-    ))
+    )
+    
+    collection = get_collection()
+    index = VectorStoreIndex.from_vector_store(ChromaVectorStore(chroma_collection=collection))
+    retriever = get_ensemble_retriever(index, plan, filtros)
+    
+    initial_nodes = retriever.retrieve(query_bundle)
+    
+    # 4. Re-ranking con LLM (Ollama)
+    print(f"[Orchestrator] Aplicando re-ranking a {len(initial_nodes)} candidatos...")
+    reranked_nodes = _RERANKER.rerank(query, initial_nodes)
+    
+    # 5. Síntesis de respuesta
+    synthesizer = get_response_synthesizer(response_mode="compact")
+    synthesizer.update_prompts({"text_qa_template": QA_PROMPT})
+    
+    response = synthesizer.synthesize(query_bundle, nodes=reranked_nodes)
     
     sources = []
-    for node in response.source_nodes:
+    for node in reranked_nodes:
         meta = node.metadata
         sources.append({
             "fragment": node.get_content(),
-            "speaker": meta.get("orador", "Desconocido"),
+            "speaker": fix_encoding(meta.get("orador", "Desconocido")),
             "date": meta.get("fecha", ""),
             "legislature": meta.get("legislatura", ""),
             "score": round(float(node.score or 0.0) * 100, 1),
@@ -93,4 +108,5 @@ def ask_disecan(query: str, filtros: dict | None = None):
     
     # Devolvemos los términos usados para que el usuario pueda evaluarlos
     keywords = plan.semantic_concepts + plan.literal_terms + plan.sequential_phrases
+    print(f"[Orchestrator] Respuesta generada con {len(sources)} fuentes.")
     return str(response), sources, list(set(keywords))

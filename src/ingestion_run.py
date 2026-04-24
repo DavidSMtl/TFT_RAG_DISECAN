@@ -26,6 +26,7 @@ def main() -> None:
     parser.add_argument("--fecha-desde", type=str, default=None, help="Fecha inicio YYYY-MM-DD")
     parser.add_argument("--fecha-hasta", type=str, default=None, help="Fecha fin YYYY-MM-DD")
     parser.add_argument("--force", action="store_true", help="Re-ingestar aunque ya existan chunks")
+    parser.add_argument("--limit", type=int, default=10, help="Límite máximo de documentos a procesar")
     parser.add_argument("--quiet", action="store_true", help="Reducir output")
     args = parser.parse_args()
 
@@ -37,7 +38,7 @@ def main() -> None:
     if args.fecha_hasta:
         filtros["fecha_hasta"] = args.fecha_hasta
 
-    total = run_ingestion(filtros=filtros, force=args.force, verbose=not args.quiet)
+    total = run_ingestion(filtros=filtros, force=args.force, verbose=not args.quiet, limit=args.limit)
     print(f"\nTotal chunks procesados: {total}")
 
 

@@ -24,13 +24,15 @@ class ILRetriever(BaseRetriever):
     def _retrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
         # Extraer términos del plan agéntico
         # Priorizamos frases secuenciales y términos literales + conceptos semánticos
-        search_terms = self._plan.sequential_phrases + self._plan.literal_terms + self._plan.semantic_concepts
+        search_terms = list(set(self._plan.sequential_phrases + self._plan.literal_terms + self._plan.semantic_concepts))
         
         if not search_terms:
             return []
 
         # Búsqueda léxica (Lingüística) en MySQL al estilo DiSeCan - Independiente del Vector Store
+        print(f"[Retriever] Ejecutando búsqueda léxica SQL para: {search_terms}")
         sql_results = linguistic_search(search_terms, top_k=self._top_k)
+        print(f"[Retriever] SQL encontró {len(sql_results)} frases coincidentes.")
         
         results = []
         for res in sql_results:

@@ -8,7 +8,7 @@ from itertools import islice
 from typing import Generator
 from backend.chroma_store import count_chunks, upsert_chunks
 from backend.db import get_documentos, get_frases_por_documento
-from backend.byte_reader import ByteTextReader
+from backend.byte_reader import ByteTextReader, fix_encoding
 from backend.embedder import embed_passages
 
 UPSERT_BATCH = 32
@@ -56,7 +56,7 @@ def _create_chunks_from_paragraphs(doc: dict, phrases: list[dict]) -> list[Chunk
         text = reader.get_text_by_offsets(b_start, b_len)
         if not text or len(text.split()) < MIN_WORDS: continue
         chunks.append(Chunk(
-            texto=text, orador=(f.get("orador") or "DESCONOCIDO").strip(),
+            texto=text, orador=fix_encoding((f.get("orador") or "DESCONOCIDO").strip()),
             id_documento=doc["idDocumento"], legislatura=doc.get("legislatura") or "",
             fecha=str(doc.get("fecha") or ""), num_sesion=doc.get("numSesion") or 0,
             id_frase_inicio=f["idFrases"], id_frase_fin=f["idFrases"],
@@ -68,13 +68,16 @@ def _batched(iterable: list, n: int) -> Generator[list, None, None]:
     it = iter(iterable)
     while batch := list(islice(it, n)): yield batch
 
-def run_ingestion(filtros: dict | None = None, force: bool = False, verbose: bool = True) -> int:
+def run_ingestion(filtros: dict | None = None, force: bool = False, verbose: bool = True, limit: int | None = None) -> int:
     existing = count_chunks()
     if existing > 0 and not force:
         print(f"[Ingestion] Ya hay {existing} chunks. Usa force=True.")
         return existing
     documentos = get_documentos(filtros or {})
     if not documentos: return 0
+    if limit:
+        documentos = documentos[:limit]
+        if verbose: print(f"[Ingestion] Limitando proceso a {limit} documentos.")
     total_chunks = 0
     for doc in documentos:
         frases = get_frases_por_documento(doc["idDocumento"])

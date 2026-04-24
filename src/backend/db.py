@@ -3,6 +3,7 @@ db.py — Conector MySQL para la BD DiSeCan (Versión Simplificada).
 """
 from __future__ import annotations
 import os
+import re
 from contextlib import contextmanager
 from typing import Generator
 import mysql.connector
@@ -39,7 +40,7 @@ def get_connection() -> Generator[MySQLConnection, None, None]:
 
 @contextmanager
 def get_cursor(conn: MySQLConnection) -> Generator[MySQLCursor, None, None]:
-    cursor: MySQLCursor = conn.cursor(dictionary=True)
+    cursor: MySQLCursor = conn.cursor(dictionary=True, buffered=True)
     try:
         yield cursor
     finally:
@@ -85,44 +86,55 @@ def get_ids_documentos_por_filtros(filtros: dict) -> list[int] | None:
     if not filtros.get("legislatura"): return None
     return [d["idDocumento"] for d in docs]
 
-def linguistic_search(lemas: list[str], top_k: int = 40) -> list[dict]:
+def linguistic_search(terminos: list[str], top_k: int = 40) -> list[dict]:
     """
-    Búsqueda lingüística avanzada usando auto-joins para encontrar lemas en la misma frase.
-    Réplica simplificada de DatabasePattern.cs de DiSeCan.
+    Búsqueda léxica optimizada. 
+    1. Fragmenta frases en palabras.
+    2. Filtra palabras vacías.
+    3. Busca frases que contengan la mayor cantidad de esos lemas.
     """
-    if not lemas: return []
-    
-    # Limitar a máximo 4 lemas para evitar queries infinitas
-    lemas = lemas[:4]
-    
-    joins = []
-    where = []
-    params = []
-    
-    # pal1 es la tabla base
-    where.append("LOWER(pal1.lema) = %s")
-    params.append(lemas[0].lower())
-    
-    for i, lema in enumerate(lemas[1:], start=2):
-        joins.append(f"JOIN palabras pal{i} ON pal1.idFrase = pal{i}.idFrase")
-        where.append(f"LOWER(pal{i}.lema) = %s")
-        params.append(lema.lower())
-        # Opcional: añadir restricción de orden/proximidad
-        # where.append(f"pal{i}.posElementoFrase > pal{i-1}.posElementoFrase")
+    if not terminos: return []
 
+    # 1. Extraer palabras individuales y limpiar
+    palabras_busqueda = []
+    stopwords = {"de", "la", "el", "en", "y", "a", "los", "las", "un", "una", "por", "con", "no", "su", "para", "es"}
+    
+    for t in terminos:
+        # Dividir si es una frase y limpiar caracteres raros
+        parts = re.findall(r'\w+', t.lower())
+        palabras_busqueda.extend([p for p in parts if p not in stopwords and len(p) > 2])
+    
+    # Eliminar duplicados y limitar para no matar la DB
+    palabras_busqueda = list(set(palabras_busqueda))[:8]
+    
+    if not palabras_busqueda:
+        return []
+
+    # 2. Construir query de "Best Match" (cuantos más lemas coincidan, mejor)
+    placeholders = ", ".join(["%s"] * len(palabras_busqueda))
+    
     sql = f"""
         SELECT f.idFrases as id_frase, f.orador, f.idDocumento as id_documento, 
-               COUNT(*) as score
-        FROM palabras pal1
-        {chr(10).join(joins)}
-        JOIN frases f ON pal1.idFrase = f.idFrases
-        WHERE {" AND ".join(where)}
-        GROUP BY f.idFrases 
-        ORDER BY score DESC 
+               COUNT(DISTINCT p.lema) as score
+        FROM palabras p
+        JOIN frases f ON p.idFrase = f.idFrases
+        WHERE LOWER(p.lema) IN ({placeholders})
+        GROUP BY f.idFrases
+        HAVING score >= 1
+        ORDER BY score DESC, f.idFrases ASC
         LIMIT %s
     """
-    params.append(top_k)
     
-    with get_connection() as conn, get_cursor(conn) as cur:
-        cur.execute(sql, params)
-        return cur.fetchall()
+    params = palabras_busqueda + [top_k]
+    
+    try:
+        with get_connection() as conn, get_cursor(conn) as cur:
+            cur.execute(sql, params)
+            results = cur.fetchall()
+            # Normalizar score (0.0 a 1.0) basado en cuántos lemas de la consulta se encontraron
+            for r in results:
+                r["score"] = r["score"] / len(palabras_busqueda)
+            return results
+    except Exception as e:
+        print(f"[DB] Error en linguistic_search: {e}")
+        return []

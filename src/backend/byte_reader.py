@@ -8,7 +8,40 @@ load_dotenv()
 # Configuración por defecto (basada en el análisis de DiSeCan)
 CORPUS_FILE_PATH = os.getenv("CORPUS_FILE_PATH", "./data/corpus/documentos.txt")
 PHRASES_FILE_PATH = os.getenv("PHRASES_FILE_PATH", "./data/corpus/frases.txt")
-ENCODING = "utf-8"  # Archivos detectados como UTF-8
+ENCODING = "latin-1"  # Los offsets originales de DiSeCan asumen Latin-1 (1 byte = 1 char)
+
+def fix_encoding(s: str) -> str:
+    """
+    Corrige strings con codificación rota múltiple o mojibake (ej. Ã± -> ñ).
+    """
+    if not isinstance(s, str) or not s:
+        return s
+    
+    # 1. Diccionario de emergencia para mojibake común de DiSeCan/Parlamento
+    # Estos casos a veces no se arreglan con encode/decode simple si hay caracteres de control
+    replacements = {
+        "Ã¡": "á", "Ã©": "é", "Ã­": "í", "Ã³": "ó", "Ãº": "ú",
+        "Ã±": "ñ", "Ã‘": "Ñ", "Ã\x81": "Á", "Ã\x89": "É", "Ã\x8d": "Í",
+        "Ã\x93": "Ó", "Ã\x9a": "Ú", "Ã¼": "ü", "Ã\xbf": "¿", "Â¡": "¡"
+    }
+    
+    # Aplicar reemplazos manuales primero (son los más seguros)
+    for old, new in replacements.items():
+        s = s.replace(old, new)
+
+    # 2. Intentar arreglo recursivo por si hay más niveles
+    current = s
+    for _ in range(3):
+        try:
+            # Probamos a revertir: lo que parece cp1252 era en realidad UTF-8
+            test_s = current.encode('cp1252').decode('utf-8')
+            if test_s == current: break
+            current = test_s
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            break
+            
+    # Limpieza final de espacios raros o caracteres de control que ensucian la búsqueda
+    return current.strip()
 
 class ByteTextReader:
     """
@@ -33,7 +66,7 @@ class ByteTextReader:
             with open(self.documentos_path, "rb") as f:
                 f.seek(b_start)
                 raw = f.read(b_len)
-                # Usamos cp1252 para respetar la codificación original de DiSeCan
+                # Latin-1: 1 byte = 1 char, los offsets son exactos y el texto sale perfecto
                 return raw.decode(ENCODING, errors="ignore").strip()
         except Exception as e:
             print(f"Error leyendo documentos.txt en offset {b_start}: {e}")
@@ -45,17 +78,3 @@ class ByteTextReader:
         de la frase a menudo apunta al párrafo completo.
         """
         return self.get_text_by_offsets(b_start, b_len)
-
-def test_reader():
-    """Prueba de lectura directa con offsets conocidos."""
-    reader = ByteTextReader()
-    # Frase 1: Offset 0, Len 71 en el sistema original
-    print(f"Probando lectura directa de {CORPUS_FILE_PATH}...")
-    texto = reader.get_text_by_offsets(0, 71)
-    if texto:
-        print(f"Texto recuperado (Offset 0):\n{texto}")
-    else:
-        print("No se pudo recuperar el texto. Verifica la ruta en el .env.")
-
-if __name__ == "__main__":
-    test_reader()

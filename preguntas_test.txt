@@ -1,0 +1,30 @@
+# Preguntas de prueba para el RAG DiSeCan (Parlamento de Canarias)
+
+## Economía y Fiscalidad
+1. ¿Qué se ha debatido sobre el encarecimiento de la cesta de la compra en las islas?
+2. ¿Hay alguna mención sobre la bonificación del combustible en las islas no capitalinas?
+3. ¿Qué se dice sobre el impacto del REF (Régimen Económico y Fiscal) en el empleo?
+
+
+## Turismo y Medio Ambiente
+5. ¿Cuál es la postura de los grupos parlamentarios sobre la implantación de una "tasa turística"?
+6. ¿Qué medidas se han propuesto para combatir la crisis hídrica y la sequía?
+7. ¿Se ha debatido sobre el límite al crecimiento turístico o la ley de vivienda vacacional?
+8. ¿Qué intervenciones hay sobre la protección de los espacios naturales protegidos?
+
+## Sanidad y Servicios Sociales
+9. ¿Qué críticas se han hecho sobre las listas de espera en el Servicio Canario de Salud?
+10. ¿Qué se ha aprobado respecto a la mejora de la salud mental en jóvenes?
+11. ¿Hay debates sobre la situación de las residencias de mayores y la dependencia?
+12. ¿Qué ha dicho Casimiro Curbelo sobre el sistema sanitario canario?
+
+## Política y Procedimientos
+13. Buscad una "proposición no de ley" que hable sobre el sector primario y la ganadería.
+14. ¿Qué se debatió en la última sesión sobre la reconstrucción de La Palma tras el volcán?
+15. ¿Qué consejero ha intervenido más sobre temas de educación y cultura?
+16. ¿Qué medidas se han propuesto para mejorar la conectividad aérea entre islas?
+
+## Consejos para las preguntas:
+- Usa comillas para términos exactos: ej. "tasa turística".
+- Sé específico con los nombres si buscas a alguien concreto: ej. "Román Rodríguez".
+- Puedes preguntar por legislaturas específicas si aplicas los filtros en la interfaz.

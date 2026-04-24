@@ -21,6 +21,7 @@ class QueryAnalyzer:
         
     def analyze(self, query: str) -> SearchPlan:
         # Regex para detectar comillas manuales (se tratan como literales)
+        print(f"\n[Analyzer] Analizando consulta: '{query}'")
         manual_quotes = re.findall(r'"([^"]*)"', query)
         
         prompt = f"""
@@ -47,21 +48,13 @@ Respuesta: {{
   "intent": "hybrid"
 }}
 
-Consulta: "Dime qué se aprobó sobre la tasa turística en una proposición no de ley."
-Respuesta: {{
-  "semantic_concepts": ["aprobación", "turismo", "normativa", "impuestos"],
-  "literal_terms": ["tasa turística"],
-  "sequential_phrases": ["proposición no de ley"],
-  "entities": [],
-  "hypothetical_answer": "El Parlamento debatió la creación de una tasa turística mediante una proposición no de ley para financiar la sostenibilidad.",
-  "intent": "hybrid"
-}}
-
 Consulta Actual: "{query}"
 Respuesta (solo JSON):
 """
         try:
             response = self.llm.complete(prompt)
+            data = json.loads(response.text)
+            
             # Sanatizar entidades para asegurar que son strings (el LLM a veces devuelve dicts)
             raw_entities = data.get("entities", [])
             data["entities"] = [
@@ -77,18 +70,14 @@ Respuesta (solo JSON):
             if manual_quotes:
                 data.setdefault("literal_terms", []).extend(manual_quotes)
                 data["literal_terms"] = list(set(data["literal_terms"]))
-                
-            return SearchPlan(**data)
+            
+            plan = SearchPlan(**data)
+            print(f"[Analyzer] HyDE: {plan.hypothetical_answer[:60]}...")
+            print(f"[Analyzer] Términos clave: {plan.semantic_concepts + plan.literal_terms}")
+            return plan
         except Exception as e:
-            print(f"Error analizando query: {e}")
+            print(f"[Analyzer] Error: {e}. Usando fallback.")
             return SearchPlan(semantic_concepts=query.split())
-        except Exception as e:
-            print(f"Error analizando query: {e}")
-            # Fallback seguro
-            return SearchPlan(
-                must_have=query.split(),
-                intent="hybrid"
-            )
 
 if __name__ == "__main__":
     analyzer = QueryAnalyzer()
