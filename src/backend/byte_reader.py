@@ -12,36 +12,11 @@ ENCODING = "utf-8"  # El corpus físico está en UTF-8; los offsets de byte sigu
 
 def fix_encoding(s: str) -> str:
     """
-    Corrige strings con codificación rota múltiple o mojibake (ej. Ã± -> ñ).
+    Limpia espacios en blanco y valida el tipo de cadena.
     """
     if not isinstance(s, str) or not s:
         return s
-    
-    # 1. Diccionario de emergencia para mojibake común de DiSeCan/Parlamento
-    # Estos casos a veces no se arreglan con encode/decode simple si hay caracteres de control
-    replacements = {
-        "Ã¡": "á", "Ã©": "é", "Ã­": "í", "Ã³": "ó", "Ãº": "ú",
-        "Ã±": "ñ", "Ã‘": "Ñ", "Ã\x81": "Á", "Ã\x89": "É", "Ã\x8d": "Í",
-        "Ã\x93": "Ó", "Ã\x9a": "Ú", "Ã¼": "ü", "Ã\xbf": "¿", "Â¡": "¡"
-    }
-    
-    # Aplicar reemplazos manuales primero (son los más seguros)
-    for old, new in replacements.items():
-        s = s.replace(old, new)
-
-    # 2. Intentar arreglo recursivo por si hay más niveles
-    current = s
-    for _ in range(3):
-        try:
-            # Probamos a revertir: lo que parece cp1252 era en realidad UTF-8
-            test_s = current.encode('cp1252').decode('utf-8')
-            if test_s == current: break
-            current = test_s
-        except (UnicodeEncodeError, UnicodeDecodeError):
-            break
-            
-    # Limpieza final de espacios raros o caracteres de control que ensucian la búsqueda
-    return current.strip()
+    return s.strip()
 
 class ByteTextReader:
     """

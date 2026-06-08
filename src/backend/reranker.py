@@ -1,8 +1,12 @@
+import logging
 import re
 import json
 from typing import List
 from llama_index.core.schema import NodeWithScore
 from llama_index.llms.ollama import Ollama
+
+# ── Logger ────────────────────────────────────────────────────────────────────
+logger = logging.getLogger("disecan.reranker")
 
 class LLMReranker:
     def __init__(self, model_name: str = "qwen2.5:3b", base_url: str = "http://localhost:11434"):
@@ -10,10 +14,22 @@ class LLMReranker:
 
     def rerank(self, query: str, nodes: List[NodeWithScore], top_n: int = 10) -> List[NodeWithScore]:
         if not nodes:
+            logger.warning("[Reranker] ✗ Lista de nodos vacía — nada que re-rankear.")
             return []
             
         # Solo re-rankeamos los top_k iniciales para no matar latencia (max 15)
         candidates = nodes[:15]
+
+        logger.info(f"[Reranker] ── RE-RANKING ({'─' * 30})")
+        logger.info(f"[Reranker]   Total nodos recibidos: {len(nodes)} | Candidatos evaluados: {len(candidates)}")
+        logger.debug(f"[Reranker]   Candidatos (id, score_previo, orador):")
+        for i, n in enumerate(candidates):
+            meta = n.node.metadata
+            preview = n.node.get_content().replace("\n", " ")[:80]
+            logger.debug(
+                f"[Reranker]     [{i:2d}] score={round(float(n.score or 0), 4):.4f} | "
+                f"orador='{meta.get('orador', '?')}' | texto='{preview}...'"
+            )
         
         context_str = ""
         for i, node in enumerate(candidates):
@@ -36,12 +52,23 @@ FRAGMENTOS A EVALUAR:
 
 ORDEN DE RELEVANCIA (SOLO LA LISTA JSON):
 """
+        logger.debug(f"[Reranker] ── PROMPT ENVIADO AL LLM ({'─' * 20})")
+        logger.debug(prompt)
+        logger.debug(f"[Reranker] {'─' * 50}")
+
         try:
             response = self.llm.complete(prompt)
+            raw_response = str(response).strip()
+            logger.debug(f"[Reranker] ── RESPUESTA RAW DEL LLM ({'─' * 18})")
+            logger.debug(raw_response)
+            logger.debug(f"[Reranker] {'─' * 50}")
+
             # Extraer la lista [ ... ] usando regex
-            match = re.search(r'\[(\d+,\s*)*\d+\]', str(response))
+            match = re.search(r'\[(\d+,\s*)*\d+\]', raw_response)
             if match:
                 indices = json.loads(match.group(0))
+                logger.debug(f"[Reranker]   Índices extraídos del LLM: {indices}")
+
                 # Re-ordenar
                 reranked = []
                 seen = set()
@@ -57,9 +84,21 @@ ORDEN DE RELEVANCIA (SOLO LA LISTA JSON):
                 
                 # Añadir el resto que no entró en el re-rankeo top 15
                 reranked.extend(nodes[15:])
-                return reranked[:top_n]
+                final = reranked[:top_n]
+
+                logger.debug(f"[Reranker]   Orden FINAL (primeros {len(final)}):")
+                for rank, n in enumerate(final):
+                    meta = n.node.metadata
+                    logger.debug(
+                        f"[Reranker]     #{rank + 1:2d} — id={n.node.id_} | "
+                        f"orador='{meta.get('orador', '?')}' | fecha='{meta.get('fecha', '?')}'"
+                    )
+                logger.debug(f"[Reranker] {'─' * 50}")
+                return final
+            else:
+                logger.warning("[Reranker]   ✗ No se pudo extraer lista de índices del LLM. Usando orden original.")
         except Exception as e:
-            print(f"Error en re-rankeo: {e}")
+            logger.error(f"[Reranker]   ✗ Error en re-rankeo: {e}. Devolviendo orden original.")
             return nodes[:top_n]
             
         return nodes[:top_n]

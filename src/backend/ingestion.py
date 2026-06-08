@@ -2,13 +2,13 @@
 ingestion.py — Pipeline de ingestión simplificado: MySQL -> Bytes -> ChromaDB.
 """
 from __future__ import annotations
-import uuid
+
 from dataclasses import dataclass, field
 from itertools import islice
 from typing import Generator
 from backend.chroma_store import count_chunks, upsert_chunks
 from backend.db import get_documentos, get_frases_por_documento
-from backend.byte_reader import ByteTextReader, fix_encoding
+from backend.byte_reader import ByteTextReader
 from backend.embedder import embed_passages
 
 UPSERT_BATCH = 32
@@ -47,16 +47,21 @@ class Chunk:
 
 
 def _create_chunks_from_paragraphs(doc: dict, phrases: list[dict]) -> list[Chunk]:
-    chunks, reader, seen_offsets = [], ByteTextReader(), set()
+    """
+    Crea un chunk por cada frase de MySQL, sin deduplicar por offsets.
+    Esto garantiza que el chunk_id (c_<idDoc>_<idFrase>) exista en ChromaDB
+    para cada fila de MySQL, manteniendo la alineación de IDs entre el canal
+    léxico (SQL) y el canal semántico (vector) — condición necesaria para que
+    el ILRetriever pueda hacer el lookup en chroma_map al 100%.
+    """
+    chunks, reader = [], ByteTextReader()
     for f in phrases:
         b_start, b_len = f.get("ByteInicioFrase"), f.get("ByteLongFrase")
         if b_start is None or b_len is None: continue
-        if (b_start, b_len) in seen_offsets: continue
-        seen_offsets.add((b_start, b_len))
         text = reader.get_text_by_offsets(b_start, b_len)
         if not text or len(text.split()) < MIN_WORDS: continue
         chunks.append(Chunk(
-            texto=text, orador=fix_encoding((f.get("orador") or "DESCONOCIDO").strip()),
+            texto=text, orador=(f.get("orador") or "DESCONOCIDO").strip(),
             id_documento=doc["idDocumento"], legislatura=doc.get("legislatura") or "",
             fecha=str(doc.get("fecha") or ""), num_sesion=doc.get("numSesion") or 0,
             id_frase_inicio=f["idFrases"], id_frase_fin=f["idFrases"],

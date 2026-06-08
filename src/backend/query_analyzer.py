@@ -1,8 +1,12 @@
 import json
+import logging
 import re
 from typing import List, Dict, Any, Optional
 from llama_index.llms.ollama import Ollama
 from pydantic import BaseModel, Field
+
+# ── Logger ────────────────────────────────────────────────────────────────────
+logger = logging.getLogger("disecan.analyzer")
 
 class SearchPlan(BaseModel):
     semantic_concepts: List[str] = Field(default_factory=list, description="Conceptos para expansión y búsqueda semántica (lemas)")
@@ -20,9 +24,23 @@ class QueryAnalyzer:
         self.llm = Ollama(model=model_name, base_url=base_url, request_timeout=30.0)
         
     def analyze(self, query: str) -> SearchPlan:
+        logger.debug("=" * 60)
+        logger.debug(f"[Analyzer] ▶ QUERY RECIBIDA: '{query}'")
+
+        # Si la consulta contiene sintaxis especial de DiSeCan, la tratamos como término directo secuencial para evitar que el LLM la altere o rompa
+        if any(c in query for c in "[]<>*") or ":" in query:
+            logger.info("[Analyzer] Sintaxis especial de DiSeCan detectada. Bypaseando LLM.")
+            return SearchPlan(
+                semantic_concepts=[],
+                literal_terms=[],
+                sequential_phrases=[query.strip()],
+                intent="exact"
+            )
+
         # Regex para detectar comillas manuales (se tratan como literales)
-        print(f"\n[Analyzer] Analizando consulta: '{query}'")
         manual_quotes = re.findall(r'"([^"]*)"', query)
+        if manual_quotes:
+            logger.debug(f"[Analyzer]   Comillas manuales detectadas: {manual_quotes}")
         
         prompt = f"""
 Eres un Analista Lexicográfico y Experto en Debates del Parlamento de Canarias. Tu misión es transformar una consulta en lenguaje natural en un 'SearchPlan' técnico altamente preciso para un sistema RAG.
@@ -51,9 +69,18 @@ Respuesta: {{
 Consulta Actual: "{query}"
 Respuesta (solo JSON):
 """
+        logger.debug(f"[Analyzer] ── PROMPT ENVIADO AL LLM ({'─' * 20})")
+        logger.debug(prompt)
+        logger.debug(f"[Analyzer] {'─' * 50}")
+
         try:
             response = self.llm.complete(prompt)
-            data = json.loads(response.text)
+            raw_text = response.text.strip()
+            logger.debug(f"[Analyzer] ── RESPUESTA RAW DEL LLM ({'─' * 18})")
+            logger.debug(raw_text)
+            logger.debug(f"[Analyzer] {'─' * 50}")
+
+            data = json.loads(raw_text)
             
             # Sanatizar entidades para asegurar que son strings (el LLM a veces devuelve dicts)
             raw_entities = data.get("entities", [])
@@ -72,11 +99,18 @@ Respuesta (solo JSON):
                 data["literal_terms"] = list(set(data["literal_terms"]))
             
             plan = SearchPlan(**data)
-            print(f"[Analyzer] HyDE: {plan.hypothetical_answer[:60]}...")
-            print(f"[Analyzer] Términos clave: {plan.semantic_concepts + plan.literal_terms}")
+
+            logger.debug(f"[Analyzer] ── SEARCH PLAN CONSTRUIDO ({'─' * 18})")
+            logger.debug(f"[Analyzer]   intent            : {plan.intent}")
+            logger.debug(f"[Analyzer]   semantic_concepts : {plan.semantic_concepts}")
+            logger.debug(f"[Analyzer]   literal_terms     : {plan.literal_terms}")
+            logger.debug(f"[Analyzer]   sequential_phrases: {plan.sequential_phrases}")
+            logger.debug(f"[Analyzer]   entities          : {plan.entities}")
+            logger.debug(f"[Analyzer]   hypothetical_ans  : {plan.hypothetical_answer[:120]}")
+            logger.debug(f"[Analyzer] {'=' * 60}")
             return plan
         except Exception as e:
-            print(f"[Analyzer] Error: {e}. Usando fallback.")
+            logger.error(f"[Analyzer] ✗ ERROR al analizar: {e}. Usando fallback de palabras clave.")
             return SearchPlan(semantic_concepts=query.split())
 
 if __name__ == "__main__":

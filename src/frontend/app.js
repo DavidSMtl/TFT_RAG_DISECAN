@@ -6,6 +6,7 @@ function toggleSidebar() {
 
 //Limpiar filtros
 function clearFilters() {
+    document.getElementById("search-mode").value = "full";
     document.getElementById("filter-legislature").value = "";
     document.getElementById("filter-speaker").value = "";
     document.getElementById("filter-session").value = "";
@@ -147,6 +148,7 @@ async function sendMessage(event) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 query: query,
+                mode: document.getElementById("search-mode").value,
                 filters: {
                     legislatura: document.getElementById("filter-legislature").value,
                     orador: document.getElementById("filter-speaker").value,

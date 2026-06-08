@@ -3,11 +3,27 @@ API REST encargada de comunicar el RAG con el frontend.
 """
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+
+# ── Logging global ─────────────────────────────────────────────────────────────
+# Siempre activo a nivel INFO. Los módulos del pipeline usan el nivel INFO/ERROR.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+# Silenciar librerías ruidosas para que los logs del pipeline sean legibles
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("llama_index").setLevel(logging.WARNING)
+logging.getLogger("chromadb").setLevel(logging.WARNING)
+
+logger = logging.getLogger("disecan.app")
 
 _BASE = Path(__file__).parent.parent          # src/
 FRONTEND_DIR = _BASE / "frontend"
@@ -41,32 +57,52 @@ def health():
 from backend.orchestrator import ask_disecan, get_query_engine
 
 # Precarga del motor RAG al arrancar para evitar lentitud en la primera respuesta
-print("[App] Inicializando motor RAG en segundo plano...")
+logger.info("[App] Inicializando motor RAG en segundo plano...")
 try:
     from backend.query_analyzer import SearchPlan
     get_query_engine(SearchPlan())
-    print("[App] Motor RAG inicializado con éxito.")
+    logger.info("[App] Motor RAG inicializado con éxito.")
 except Exception as e:
-    print(f"[App] ADVERTENCIA: Error al precargar el motor: {e}")
+    logger.warning(f"[App] ADVERTENCIA: Error al precargar el motor: {e}")
+
+# Modos de operación válidos
+_VALID_MODES = {"full", "linguistics_only"}
 
 @app.post("/api/chat")
 def chat():
     """
     Endpoint principal del chatbot (100% síncrono).
+
+    Campos del JSON de la request
+    ─────────────────────────────
+    query   (str, obligatorio)  : Pregunta del usuario.
+    filters (dict, opcional)    : Filtros (legislatura, fecha_desde, fecha_hasta).
+    mode    (str, opcional)     : "full" (defecto) | "linguistics_only"
+                                  "full"             → pipeline híbrido completo.
+                                  "linguistics_only" → solo búsqueda léxica SQL.
     """
     data = request.get_json(silent=True) or {}
     query: str = data.get("query", "").strip()
     filters: dict = data.get("filters", {})
+    mode: str = data.get("mode", "full").strip()
 
     if not query:
         return jsonify({"error": "El campo 'query' es obligatorio."}), 400
 
-    try:
-        answer, sources, keywords = ask_disecan(query, filters)
+    if mode not in _VALID_MODES:
         return jsonify({
-            "answer": answer, 
+            "error": f"Modo '{mode}' no reconocido. Valores válidos: {sorted(_VALID_MODES)}"
+        }), 400
+
+    logger.info(f"[App] ▶ POST /api/chat | mode='{mode}' | query='{query[:80]}'")
+
+    try:
+        answer, sources, keywords = ask_disecan(query, filters, mode=mode)
+        return jsonify({
+            "answer": answer,
             "sources": sources,
-            "keywords": keywords
+            "keywords": keywords,
+            "mode": mode,          # devolvemos el modo usado para auditoría
         })
     except Exception as e:
         app.logger.error(f"Error en RAG: {e}")
