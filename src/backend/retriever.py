@@ -3,6 +3,7 @@ retriever.py — Búsqueda Híbrida Simplificada para DiSeCan.
 """
 from __future__ import annotations
 import logging
+import re
 from typing import List
 from llama_index.core import VectorStoreIndex, QueryBundle
 from llama_index.core.retrievers import BaseRetriever, VectorIndexRetriever, QueryFusionRetriever
@@ -17,6 +18,7 @@ logger = logging.getLogger("disecan.retriever")
 class ILRetriever(BaseRetriever):
     """
     ILRetriever (Index Lexicographical): Independiente y especializado en MySQL.
+    Soporta tanto búsqueda libre como patrones DISECAN (<cat>, [lema], etc.).
     """
     def __init__(self, chroma_chunks: list[dict], plan: SearchPlan, similarity_top_k: int = 25):
         self._top_k = similarity_top_k
@@ -26,18 +28,31 @@ class ILRetriever(BaseRetriever):
         super().__init__()
 
     def _retrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
-        # Extraer términos del plan agéntico
-        # Priorizamos frases secuenciales y términos literales + conceptos semánticos
-        search_terms = list(set(self._plan.sequential_phrases + self._plan.literal_terms + self._plan.semantic_concepts))
-        
+        raw_query = query_bundle.query_str.strip()
+
+        # ── Determinar los términos de búsqueda ──────────────────────────────
+        # Si la query raw contiene sintaxis DISECAN, la usamos directamente
+        # para no perder los patrones al pasar por el QueryAnalyzer.
+        has_disecan = bool(re.search(r"[<>\[\]:\*\?]", raw_query))
+        if has_disecan:
+            search_terms = [raw_query]
+            logger.info(f"[Retriever/SQL] Sintaxis DISECAN detectada — usando query raw: '{raw_query}'")
+        else:
+            # Búsqueda libre: extraer del plan agéntico
+            search_terms = list(set(
+                self._plan.sequential_phrases
+                + self._plan.literal_terms
+                + self._plan.semantic_concepts
+            ))
+
         logger.info(f"[Retriever/SQL] ── BÚSQUEDA LÉXICA ({'─' * 25})")
-        logger.debug(f"[Retriever/SQL]   Términos del plan (pre-filtro): {search_terms}")
+        logger.debug(f"[Retriever/SQL]   Términos de búsqueda: {search_terms}")
 
         if not search_terms:
             logger.warning("[Retriever/SQL]   ✗ Sin términos de búsqueda — devolviendo vacío.")
             return []
 
-        # Búsqueda léxica (Lingüística) en MySQL al estilo DiSeCan - Independiente del Vector Store
+        # Búsqueda léxica (Lingüística) en MySQL al estilo DiSeCan
         sql_results = linguistic_search(search_terms, top_k=self._top_k)
 
         logger.debug(f"[Retriever/SQL]   SQL devolvió {len(sql_results)} filas.")
@@ -51,16 +66,15 @@ class ILRetriever(BaseRetriever):
         for res in sql_results:
             # Reconstruir el ID determinista
             target_id = f"c_{res['id_documento']}_{res['id_frase']}"
-            
+
             if target_id in self._chunk_map:
                 matched += 1
                 c = self._chunk_map[target_id]
                 node = TextNode(
-                    text=c["document"], 
-                    id_=c["id"], 
+                    text=c["document"],
+                    id_=c["id"],
                     metadata=c["metadata"]
                 )
-                # El score léxico es la cantidad de lemas coincidentes
                 results.append(NodeWithScore(node=node, score=float(res.get("score", 1.0))))
             else:
                 unmatched_ids.append(target_id)

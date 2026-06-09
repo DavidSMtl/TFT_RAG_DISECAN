@@ -226,5 +226,21 @@
   "estadísticas": "estadístico",
   "veracidad": "veracidad",
   "fiabilidad": "fiabilidad",
-  "problemas": "problema"
+  "problemas": "problema",
+  "combustible": "combustible",
+  "carburante": "carburante",
+  "industria": "industriar",
+  "economía": "economía",
+  "precio": "precio",
+  "petróleo": "petróleo",
+  "energética": "energético",
+  "automovilística": "automovilístico",
+  "energía": "energía",
+  "gasolina": "gasolina",
+  "alimentación": "alimentación",
+  "saludable": "saludable",
+  "hidratación": "hidratación",
+  "ambiente": "ambientar",
+  "agua": "aguar",
+  "bebida": "bebido"
 }

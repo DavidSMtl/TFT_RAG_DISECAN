@@ -121,16 +121,32 @@ def ask_disecan(query: str, filtros: dict | None = None, mode: str = "full"):
 
     # ── Fase 4: Re-ranking ────────────────────────────────────────────────────
     logger.info("[Orchestrator] ── FASE 4: Re-ranking ──")
-    logger.debug(f"[Orchestrator]   Aplicando re-ranking a {len(initial_nodes)} candidatos...")
-    reranked_nodes = _RERANKER.rerank(query, initial_nodes)
-    logger.info(f"[Orchestrator]   Nodos tras re-ranking: {len(reranked_nodes)}")
+    if mode == "linguistics_only":
+        logger.info("[Orchestrator]   Saltando re-ranking en modo 'linguistics_only' para conservar orden de BD.")
+        reranked_nodes = initial_nodes[:10]
+    else:
+        logger.debug(f"[Orchestrator]   Aplicando re-ranking a {len(initial_nodes)} candidatos...")
+        reranked_nodes = _RERANKER.rerank(query, initial_nodes)
+        logger.info(f"[Orchestrator]   Nodos tras re-ranking: {len(reranked_nodes)}")
 
     # ── Fase 5: Síntesis de respuesta ─────────────────────────────────────────
     logger.info("[Orchestrator] ── FASE 5: Síntesis de respuesta ──")
-    synthesizer = get_response_synthesizer(response_mode="compact")
-    synthesizer.update_prompts({"text_qa_template": QA_PROMPT})
-    
-    response = synthesizer.synthesize(query_bundle, nodes=reranked_nodes)
+    if mode == "linguistics_only":
+        logger.info("[Orchestrator]   Saltando síntesis por LLM en modo 'linguistics_only'. Generando respuesta programática.")
+        num_coincidencias = len(initial_nodes)
+        if num_coincidencias > 0:
+            response_text = f"Búsqueda lingüística finalizada. Se han encontrado {num_coincidencias} coincidencia(s) en los documentos para el patrón '{query}'."
+        else:
+            response_text = f"No se han encontrado coincidencias en los documentos para el patrón '{query}'."
+        
+        response = type("ProgrammaticResponse", (object,), {
+            "response": response_text,
+            "__str__": lambda self: response_text
+        })()
+    else:
+        synthesizer = get_response_synthesizer(response_mode="compact")
+        synthesizer.update_prompts({"text_qa_template": QA_PROMPT})
+        response = synthesizer.synthesize(query_bundle, nodes=reranked_nodes)
     
     sources = []
     for node in reranked_nodes:
