@@ -95,7 +95,7 @@ class ByteTextReader:
             if len(parts) < 4:
                 return empty
 
-            sentence    = parts[1].strip()
+            sentence    = fix_encoding(parts[1].strip())
             b_par_start = int(parts[2]) if parts[2].strip().isdigit() else 0
             b_par_len   = int(parts[3]) if parts[3].strip().isdigit() else 0
 
@@ -143,7 +143,7 @@ class ByteTextReader:
                 # El fragmento central está en la parte que ocupa la mitad del array
                 text = parts[len(parts) // 2]
 
-            return text.strip()
+            return fix_encoding(text.strip())
 
         except Exception as e:
             print(f"[ByteReader] Error leyendo Documentos.txt en offset {b_par_start}: {e}")
