@@ -26,3 +26,9 @@ database/sample/
 database/sample.sql
 
 BuscadorCongreso/
+
+# Archivos de corpus masivos (>200MB)
+data/corpus/documentos.txt
+data/corpus/Documentos.txt
+data/corpus/frases.txt
+data/corpus/Frases.txt

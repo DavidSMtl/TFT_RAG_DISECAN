@@ -69,17 +69,13 @@ Respuesta: {{
 Consulta Actual: "{query}"
 Respuesta (solo JSON):
 """
-        logger.debug(f"[Analyzer] ── PROMPT ENVIADO AL LLM ({'─' * 20})")
+        logger.debug(f"[Analyzer] PROMPT ENVIADO AL LLM")
         logger.debug(prompt)
-        logger.debug(f"[Analyzer] {'─' * 50}")
-
         try:
             response = self.llm.complete(prompt)
             raw_text = response.text.strip()
-            logger.debug(f"[Analyzer] ── RESPUESTA RAW DEL LLM ({'─' * 18})")
+            logger.debug(f"[Analyzer] RESPUESTA DEL LLM")
             logger.debug(raw_text)
-            logger.debug(f"[Analyzer] {'─' * 50}")
-
             data = json.loads(raw_text)
             
             # Sanatizar entidades para asegurar que son strings (el LLM a veces devuelve dicts)
@@ -107,13 +103,7 @@ Respuesta (solo JSON):
             logger.debug(f"[Analyzer]   sequential_phrases: {plan.sequential_phrases}")
             logger.debug(f"[Analyzer]   entities          : {plan.entities}")
             logger.debug(f"[Analyzer]   hypothetical_ans  : {plan.hypothetical_answer[:120]}")
-            logger.debug(f"[Analyzer] {'=' * 60}")
             return plan
         except Exception as e:
-            logger.error(f"[Analyzer] ✗ ERROR al analizar: {e}. Usando fallback de palabras clave.")
+            logger.error(f"[Analyzer] ERROR al analizar: {e}. Pasando a usar palabras clave.")
             return SearchPlan(semantic_concepts=query.split())
-
-if __name__ == "__main__":
-    analyzer = QueryAnalyzer()
-    plan = analyzer.analyze('¿Qué ha dicho Casimiro Curbelo sobre el "sistema de salud" canario?')
-    print(plan.model_dump_json(indent=2))

@@ -8,7 +8,7 @@ from typing import List
 from llama_index.core import VectorStoreIndex, QueryBundle
 from llama_index.core.retrievers import BaseRetriever, VectorIndexRetriever, QueryFusionRetriever
 from llama_index.core.schema import NodeWithScore, TextNode
-from backend.chroma_store import get_all_chunks
+from backend.chroma_store import get_chunks_by_ids
 from backend.db import linguistic_search
 from backend.query_analyzer import SearchPlan
 
@@ -20,11 +20,9 @@ class ILRetriever(BaseRetriever):
     ILRetriever (Index Lexicographical): Independiente y especializado en MySQL.
     Soporta tanto búsqueda libre como patrones DISECAN (<cat>, [lema], etc.).
     """
-    def __init__(self, chroma_chunks: list[dict], plan: SearchPlan, similarity_top_k: int = 25):
+    def __init__(self, plan: SearchPlan, similarity_top_k: int = 25):
         self._top_k = similarity_top_k
         self._plan = plan
-        # Mapeo directo por ID de chunk para recuperar el contenido completo
-        self._chunk_map = {c["id"]: c for c in chroma_chunks}
         super().__init__()
 
     def _retrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
@@ -63,13 +61,21 @@ class ILRetriever(BaseRetriever):
         results = []
         matched = 0
         unmatched_ids = []
+        
+        # Recopilamos todos los IDs objetivo
+        target_ids_list = [f"c_{res['id_documento']}_{res['id_frase']}" for res in sql_results]
+        
+        # Hacemos una consulta por lotes a ChromaDB solo de los que necesitamos
+        fetched_chunks = get_chunks_by_ids(target_ids_list)
+        local_chunk_map = {c["id"]: c for c in fetched_chunks}
+        
         for res in sql_results:
             # Reconstruir el ID determinista
             target_id = f"c_{res['id_documento']}_{res['id_frase']}"
 
-            if target_id in self._chunk_map:
+            if target_id in local_chunk_map:
                 matched += 1
-                c = self._chunk_map[target_id]
+                c = local_chunk_map[target_id]
                 node = TextNode(
                     text=c["document"],
                     id_=c["id"],
@@ -100,26 +106,17 @@ def get_ensemble_retriever(
     """
     logger.info(f"[Retriever]   MODO de recuperación: '{mode}'")
 
-    # 1. Obtener chunks para el mapeo del ILRetriever
-    chroma_chunks = get_all_chunks()
-
     if mode == "linguistics_only":
         logger.info("[Retriever]   ✔ Modo linguistics_only: usando solo ILRetriever (SQL DiSeCan).")
-        if not chroma_chunks:
-            logger.warning("[Retriever]   ✗ chroma_chunks vacío — no se puede construir chunk_map para ILRetriever.")
-        return ILRetriever(chroma_chunks or [], plan)
+        return ILRetriever(plan)
 
     # Modo full: retriever híbrido
     # 2. Retriever Semántico (usa HyDE indirectamente vía QueryBundle en orchestrator)
     vector_retriever = VectorIndexRetriever(index=index, similarity_top_k=20)
     logger.debug(f"[Retriever]   VectorIndexRetriever: similarity_top_k=20")
 
-    if not chroma_chunks:
-        logger.warning("[Retriever]   ✗ chroma_chunks vacío — devolviendo solo vector_retriever.")
-        return vector_retriever
-
     # 3. ILRetriever independiente (usa el plan agéntico para SQL)
-    lexical_retriever = ILRetriever(chroma_chunks, plan)
+    lexical_retriever = ILRetriever(plan)
 
     # 4. Fusión de resultados (RRF)
     # Esto ejecuta ambos retrievers de forma independiente y combina los resultados

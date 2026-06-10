@@ -133,7 +133,7 @@ def get_lemas(query: str) -> list[str]:
         _INSTANCE = Lemmatizer()
     return _INSTANCE.lemmatize_query(query)
 
-# ── Test Mode ──────────────────────────────────────────────────────────────────
+# Test Mode 
 
 if __name__ == "__main__":
     import sys

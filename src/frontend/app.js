@@ -69,8 +69,11 @@ function addBotMessage(answer, sources, keywords) {
     const messagesEl = document.getElementById("messages");
 
     let sourcesHtml = "";
-    if (sources && sources.length > 0) {
-        let fragmentsHtml = sources.map((s, index) => {
+    // Se muestran todas las fuentes retornadas por el backend
+    const displaySources = sources ? sources : [];
+    
+    if (displaySources.length > 0) {
+        let fragmentsHtml = displaySources.map((s, index) => {
             const contextId = `context-${Date.now()}-${index}`;
             
             // Aplicar resaltados
@@ -116,12 +119,15 @@ function addBotMessage(answer, sources, keywords) {
         `;
     }
 
+    // Usar marked para procesar el Markdown (negritas, listas, saltos de línea)
+    const formattedAnswer = marked.parse(answer);
+
     const div = document.createElement("div");
     div.className = "msg";
     div.innerHTML = `
         <div class="msg-avatar bot">🤖</div>
         <div class="msg-bubble bot">
-            <p>${answer}</p>
+            <div class="markdown-body">${formattedAnswer}</div>
             ${sourcesHtml}
         </div>
     `;

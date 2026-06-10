@@ -54,36 +54,51 @@ def create_harmonized_sample(num_docs: int, output_sql: Path):
     max_phrase_file_pos = 0
     
     with open(PHRASES_FILE, "rb") as f:
-        for line_bytes in f:
+        while True:
+            # Guardamos la posición ANTES de leer la línea —
+            # ese es el ByteInicioFrase real (posición de la línea en Frases.txt),
+            # igual que hace el BuscadorCongreso (FrasesFileManagement.cs).
+            line_start = f.tell()
+            line_bytes = f.readline()
+            if not line_bytes:
+                break
+            line_len = len(line_bytes)
+
             try:
-                # Escaneamos como latin-1 para armonizar con el sistema original
                 line = line_bytes.decode("utf-8", errors="replace")
                 parts = line.split('\t')
-                if not parts or not parts[0].isdigit():
+                if not parts or not parts[0].strip().isdigit():
                     continue
                 
-                fid = int(parts[0])
-                if fid in frase_ids:
-                    # Extraer offsets del archivo físico de frases
-                    # Formato: ID \t TEXTO \t START \t LEN
-                    b_start = int(parts[2])
-                    b_len = int(parts[3])
-                    
-                    # Crear el registro armonizado
-                    f_data = frase_ids[fid].copy()
-                    f_data["ByteInicioFrase"] = b_start
-                    f_data["ByteLongFrase"] = b_len
-                    # LIMPIEZA CRÍTICA: Corregimos el orador aquí mismo
-                    f_data["orador"] = fix_encoding(f_data.get("orador", "DESCONOCIDO"))
-                    
-                    harmonized_frases.append(f_data)
-                    
-                    # Actualizar límites para el truncamiento de documentos.txt
-                    max_physical_offset = max(max_physical_offset, b_start + b_len)
-                    max_phrase_file_pos = f.tell()
-                    
-                    if fid >= max(frase_ids.keys()):
-                        break
+                fid = int(parts[0].strip())
+                if fid not in frase_ids:
+                    continue
+
+                # Los offsets del párrafo en Documentos.txt están en parts[2]/parts[3]
+                # (ByteInicioParrafo / ByteLongParrafo del DiSeCan original).
+                # Solo los necesitamos para saber hasta dónde truncar Documentos.txt.
+                b_par_start = int(parts[2].strip()) if len(parts) > 2 and parts[2].strip().isdigit() else 0
+                b_par_len   = int(parts[3].strip()) if len(parts) > 3 and parts[3].strip().isdigit() else 0
+
+                # Crear el registro armonizado:
+                # ByteInicioFrase = posición real de esta línea en Frases.txt
+                # ByteLongFrase   = longitud en bytes de esta línea en Frases.txt
+                # Esto REPLICA exactamente lo que almacena el DiSeCan original en MySQL.
+                f_data = frase_ids[fid].copy()
+                f_data["ByteInicioFrase"] = line_start
+                f_data["ByteLongFrase"]   = line_len
+                # LIMPIEZA CRÍTICA: Corregimos el orador aquí mismo
+                f_data["orador"] = fix_encoding(f_data.get("orador", "DESCONOCIDO"))
+                
+                harmonized_frases.append(f_data)
+                
+                # Actualizar límites para el truncamiento de documentos.txt
+                if b_par_len > 0:
+                    max_physical_offset = max(max_physical_offset, b_par_start + b_par_len)
+                max_phrase_file_pos = f.tell()
+
+                if fid >= max(frase_ids.keys()):
+                    break
             except Exception:
                 continue
 

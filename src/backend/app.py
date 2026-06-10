@@ -38,7 +38,7 @@ CORS(app)  # Desarrollo
 
 @app.get("/")
 def index():
-    """Sirve la SPA del chatbot."""
+    """Sirve la página principal"""
     return send_from_directory(str(FRONTEND_DIR), "index.html")
 
 
@@ -71,16 +71,14 @@ _VALID_MODES = {"full", "linguistics_only"}
 @app.post("/api/chat")
 def chat():
     """
-    Endpoint principal del chatbot (100% síncrono).
+    Endpoint principal del chatbot.
 
     Campos del JSON de la request
-    ─────────────────────────────
     query   (str, obligatorio)  : Pregunta del usuario.
     filters (dict, opcional)    : Filtros (legislatura, fecha_desde, fecha_hasta).
-    mode    (str, opcional)     : "full" (defecto) | "linguistics_only"
-                                  "full"             → pipeline híbrido completo.
-                                  "linguistics_only" → solo búsqueda léxica SQL.
+    mode    (str, opcional)     : "full" | "linguistics_only"
     """
+    
     data = request.get_json(silent=True) or {}
     query: str = data.get("query", "").strip()
     filters: dict = data.get("filters", {})
@@ -102,7 +100,7 @@ def chat():
             "answer": answer,
             "sources": sources,
             "keywords": keywords,
-            "mode": mode,          # devolvemos el modo usado para auditoría
+            "mode": mode,
         })
     except Exception as e:
         app.logger.error(f"Error en RAG: {e}")

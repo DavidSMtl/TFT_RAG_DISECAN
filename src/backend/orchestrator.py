@@ -14,13 +14,11 @@ from backend.chroma_store import get_collection
 from backend.retriever import get_ensemble_retriever
 from backend.embedder import embed_query, embed_passages
 from backend.query_analyzer import QueryAnalyzer, SearchPlan
-from backend.byte_reader import fix_encoding
+from backend.byte_reader import fix_encoding, ByteTextReader
 from backend.reranker import LLMReranker
 
-# ── Logger ────────────────────────────────────────────────────────────────────
 logger = logging.getLogger("disecan.orchestrator")
 
-# KEEP STOPWORDS as requested by the user for future advanced features
 STOPWORDS = {
     "que", "de", "se", "el", "la", "a", "en", "y", "o", "un", "una", 
     "los", "las", "por", "con", "no", "su", "sus", "para", "como", 
@@ -32,7 +30,8 @@ STOPWORDS = {
 import torch
 
 def setup_settings():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # Forzamos CPU para dejar la VRAM (cuda) libre exclusivamente para Ollama
+    device = "cpu"
     logger.info(f"[Orchestrator] Configurando LlamaIndex en dispositivo: {device}")
     
     os.environ["OPENAI_API_KEY"] = "sk-no-key-required"
@@ -82,34 +81,31 @@ def ask_disecan(query: str, filtros: dict | None = None, mode: str = "full"):
     mode    : "full"             → pipeline híbrido (vector + léxico + reranking).
               "linguistics_only" → solo búsqueda léxica SQL (sin ChromaDB ni HyDE).
     """
-    logger.info("★" * 60)
+
     logger.info(f"[Orchestrator] NUEVA PETICIÓN | mode='{mode}' | filtros={filtros}")
     logger.info(f"[Orchestrator] Query: '{query}'")
-    logger.info("★" * 60)
 
-    # ── Fase 1: Análisis de la consulta ─────────────────────────────────────
-    logger.info("[Orchestrator] ── FASE 1: QueryAnalyzer ──")
+    # Analizar y convertir la query del usuario en un plan de búsqueda.
+    logger.info("[Orchestrator] FASE 1: QueryAnalyzer")
     plan = _ANALYZER.analyze(query)
     logger.debug(f"[Orchestrator]   SearchPlan intent='{plan.intent}' | concepts={plan.semantic_concepts}")
 
-    # ── Fase 2: Construcción del QueryBundle (HyDE) ──────────────────────────
-    logger.info("[Orchestrator] ── FASE 2: QueryBundle ──")
-    if mode == "full" and plan.hypothetical_answer:
-        logger.debug(f"[Orchestrator]   HyDE activado — embedding de: '{plan.hypothetical_answer[:80]}...'")
-    else:
-        logger.debug(f"[Orchestrator]   HyDE desactivado (mode='{mode}' o HyDE vacío).")
+    # Construir un objeto que pueda ser utilizado por LlamaIndex
+    logger.info("[Orchestrator] FASE 2: QueryBundle")
 
     query_bundle = QueryBundle(
-        query_str=query,
+        query_str=query,  # Sí estamos en modo SQL solo pasamos la query original
         custom_embedding_strs=[plan.hypothetical_answer] if (mode == "full" and plan.hypothetical_answer) else None
     )
 
-    # ── Fase 3: Recuperación ─────────────────────────────────────────────────
-    logger.info("[Orchestrator] ── FASE 3: Recuperación híbrida ──")
+    # FASE 3: Recuperación 
+    logger.info("[Orchestrator] FASE 3: Recuperación híbrida")
     collection = get_collection()
+    # Obtener el la colección de vectores de Chroma para crear un índice de busqueda para vectores
     index = VectorStoreIndex.from_vector_store(ChromaVectorStore(chroma_collection=collection))
     retriever = get_ensemble_retriever(index, plan, filtros, mode=mode)
-    
+
+    # Recuperar los fragmentos de texto iniciales (nodos)
     initial_nodes = retriever.retrieve(query_bundle)
     logger.info(f"[Orchestrator]   Nodos recuperados (pre-reranking): {len(initial_nodes)}")
     for i, n in enumerate(initial_nodes[:5]):
@@ -119,8 +115,8 @@ def ask_disecan(query: str, filtros: dict | None = None, mode: str = "full"):
             f"orador='{meta.get('orador', '?')}' | id={n.node.id_}"
         )
 
-    # ── Fase 4: Re-ranking ────────────────────────────────────────────────────
-    logger.info("[Orchestrator] ── FASE 4: Re-ranking ──")
+    # FASE 4: Re-ranking 
+    logger.info("[Orchestrator] FASE 4: Re-ranking")
     if mode == "linguistics_only":
         logger.info("[Orchestrator]   Saltando re-ranking en modo 'linguistics_only' para conservar orden de BD.")
         reranked_nodes = initial_nodes[:10]
@@ -129,10 +125,11 @@ def ask_disecan(query: str, filtros: dict | None = None, mode: str = "full"):
         reranked_nodes = _RERANKER.rerank(query, initial_nodes)
         logger.info(f"[Orchestrator]   Nodos tras re-ranking: {len(reranked_nodes)}")
 
-    # ── Fase 5: Síntesis de respuesta ─────────────────────────────────────────
-    logger.info("[Orchestrator] ── FASE 5: Síntesis de respuesta ──")
+    # FASE 5: Síntesis de respuesta 
+    logger.info("[Orchestrator] FASE 5: Síntesis de respuesta")
+    # Si es solo SQL, la respuesta es sencillamente si ha habido coincidencias o no
     if mode == "linguistics_only":
-        logger.info("[Orchestrator]   Saltando síntesis por LLM en modo 'linguistics_only'. Generando respuesta programática.")
+        logger.info("[Orchestrator]   Saltando síntesis por LLM en modo 'linguistics_only'. Generando respuesta.")
         num_coincidencias = len(initial_nodes)
         if num_coincidencias > 0:
             response_text = f"Búsqueda lingüística finalizada. Se han encontrado {num_coincidencias} coincidencia(s) en los documentos para el patrón '{query}'."
@@ -144,27 +141,42 @@ def ask_disecan(query: str, filtros: dict | None = None, mode: str = "full"):
             "__str__": lambda self: response_text
         })()
     else:
+        # En modo normal, LlamaIndex realiza la respuesta final con un sintetizador
         synthesizer = get_response_synthesizer(response_mode="compact")
         synthesizer.update_prompts({"text_qa_template": QA_PROMPT})
+        # Necesita la query original y los fragmentos (nodos) para generar la respuesta final
         response = synthesizer.synthesize(query_bundle, nodes=reranked_nodes)
     
+    # Devolvemos los términos usados para que el usuario pueda evaluarlos
+    keywords = list(set(plan.semantic_concepts + plan.literal_terms + plan.sequential_phrases))
+
+    _reader = ByteTextReader()
     sources = []
     for node in reranked_nodes:
         meta = node.metadata
-        sources.append({
-            "fragment": node.get_content(),
-            "speaker": fix_encoding(meta.get("orador", "Desconocido")),
-            "date": meta.get("fecha", ""),
-            "legislature": meta.get("legislatura", ""),
-            "score": round(float(node.score or 0.0) * 100, 1),
-            "id": node.id_
-        })
-    
-    # Devolvemos los términos usados para que el usuario pueda evaluarlos
-    keywords = plan.semantic_concepts + plan.literal_terms + plan.sequential_phrases
 
-    logger.info(f"[Orchestrator] ✔ RESPUESTA GENERADA | Fuentes: {len(sources)} | Modo: '{mode}'")
+        # FRASE CORTA: se lee de Frases.txt usando los offsets guardados en metadata
+        b_frase_start = int(meta.get("b_frase_start", 0))
+        b_frase_len   = int(meta.get("b_frase_len", 0))
+        res = _reader.get_sentence_and_paragraph_offsets(b_frase_start, b_frase_len)
+        sentence = res["sentence"] if res["sentence"] else node.get_content().strip()
+
+        # PÁRRAFO CONTEXTO: se lee de Documentos.txt usando los offsets guardados en metadata
+        b_par_start = int(meta.get("b_par_start", 0))
+        b_par_len   = int(meta.get("b_par_len",   0))
+        paragraph   = _reader.get_paragraph(b_par_start, b_par_len) if b_par_len > 0 else ""
+
+        sources.append({
+            "fragment":   sentence,                                      # Frase corta visible
+            "context":    paragraph,                                     # Párrafo ampliado (al expandir)
+            "speaker":    fix_encoding(meta.get("orador", "Desconocido")),
+            "date":       meta.get("fecha", ""),
+            "legislature": meta.get("legislatura", ""),
+            "score":      round(float(node.score or 0.0) * 100, 1),
+            "id":         node.id_
+        })
+
+    logger.info(f"[Orchestrator] RESPUESTA GENERADA | Fuentes: {len(sources)} | Modo: '{mode}'")
     logger.debug(f"[Orchestrator] Keywords devueltas: {list(set(keywords))}")
-    logger.info("★" * 60)
 
     return str(response), sources, list(set(keywords))

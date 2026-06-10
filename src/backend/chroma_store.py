@@ -144,3 +144,28 @@ def get_all_chunks(where: dict | None = None) -> list[dict]:
 def count_chunks() -> int:
     """Número total de chunks indexados."""
     return get_collection().count()
+
+
+def get_chunks_by_ids(ids: list[str]) -> list[dict]:
+    """
+    Recupera chunks específicos por su ID de forma eficiente.
+    """
+    if not ids:
+        return []
+    
+    col = get_collection()
+    results = col.get(
+        ids=ids,
+        include=["documents", "metadatas"]
+    )
+    
+    output: list[dict] = []
+    for i, chunk_id in enumerate(results["ids"]):
+        output.append(
+            {
+                "id": chunk_id,
+                "document": results["documents"][i],
+                "metadata": results["metadatas"][i],
+            }
+        )
+    return output
