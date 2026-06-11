@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Chatbot DiSeCan </title>
+    <title>DiSeCan - Buscador</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;700&display=swap" rel="stylesheet">
@@ -14,80 +14,112 @@
 
 <body>
 
-    <aside id="sidebar">
-        <h2>Filtros Avanzados</h2>
-
-        <div class="filter-group">
-            <label>Modo de Búsqueda</label>
-            <select id="search-mode">
-                <option value="full">Completo (Híbrido + IA)</option>
-                <option value="linguistics_only">Solo DiSeCan (Lingüístico)</option>
-            </select>
+    <header>
+        <div class="header-container">
+            <img src="../assets/logo_disecan.png" alt="Logo DiSeCan" class="header-logo" />
+            <h1 class="header-title">DiSeCan - Buscador Inteligente en el Diario de Sesiones del Parlamento de Canarias</h1>
+            <img src="../assets/logo_iatext_vertical.png" alt="Logo IAText" class="header-logo logo-right" />
         </div>
+    </header>
 
-        <div class="filter-group">
-            <label>Legislatura</label>
-            <select id="filter-legislature">
-                <option value="">Todas las legislaturas</option>
-                <option value="X Legislatura">X Legislatura</option>
-                <option value="IX Legislatura">IX Legislatura</option>
-            </select>
-        </div>
-
-        <div class="filter-group">
-            <label>Orador/a</label>
-            <select id="filter-speaker">
-                <option value="">Todos los intervinientes</option>
-                <option value="Presidente/a">Presidente/a</option>
-                <option value="Diputado/a A">Diputado/a A</option>
-                <option value="Diputado/a B">Diputado/a B</option>
-            </select>
-        </div>
-
-        <div class="filter-group">
-            <label>Sesión</label>
-            <select id="filter-session">
-                <option value="">Cualquier número</option>
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-            </select>
-        </div>
-
-        <div class="filter-group">
-            <label>Fecha de la Sesión</label>
-            <input type="date" id="filter-date" />
-        </div>
-
-        <button class="btn-clear" onclick="clearFilters()">Restablecer Filtros</button>
+    <main id="main">
         
-        <div style="margin-top: auto; padding-top: 2rem; opacity: 0.6; font-size: 0.7rem; text-align: center;">
-            Parlamento de Canarias<br>Proyecto DiSeCan
-        </div>
-    </aside>
+        <section class="search-section">
+            <form id="search-form" onsubmit="performSearch(event)">
+                
+                <!-- Barra de búsqueda principal -->
+                <div class="search-bar-container">
+                    <input type="text" id="search-input" placeholder="Escriba los términos a buscar..." autocomplete="off" />
+                    
+                    <select id="search-mode" class="cat-dropdown" title="Modo de Búsqueda">
+                        <option value="full">Híbrido + IA</option>
+                        <option value="linguistics_only">Léxico Clásico</option>
+                    </select>
 
-    <!-- Overlay para móvil -->
-    <div id="sidebar-overlay" onclick="toggleSidebar()"></div>
+                    <button type="submit" class="btn-buscar">Buscar</button>
+                </div>
+                
+                <div class="search-options">
+                    <a href="#" class="link-examples">Mostrar ejemplos de búsqueda</a>
+                </div>
 
-    <div id="main">
-        <header>
-            <button id="btn-menu" class="btn-menu" onclick="toggleSidebar()" aria-label="Abrir menú">☰</button>
-            <div class="header-container">
-                <img src="../assets/logo_disecan.png" alt="Logo DiSeCan" class="header-logo" />
-                <h1 class="header-title">Asistente Inteligente · Diario de Sesiones</h1>
-                <img src="../assets/logo_iatext_vertical.png" alt="Logo IAText" class="header-logo" />
+                <!-- Filtros (Dropdowns) -->
+                <div class="filters-container">
+                    <div class="filter-group">
+                        <label>Presidente</label>
+                        <select id="filter-president">
+                            <option value="">Presidente/a</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>Orador</label>
+                        <select id="filter-speaker">
+                            <option value="">Orador/a</option>
+                            <option value="Ríos Pérez">Ríos Pérez</option>
+                            <option value="Saavedra Acevedo">Saavedra Acevedo</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>Legislatura</label>
+                        <select id="filter-legislature">
+                            <option value="">Legislatura</option>
+                            <option value="III Legislatura">III Legislatura</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>Sesión</label>
+                        <select id="filter-session">
+                            <option value="">Número sesión</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>Fecha</label>
+                        <select id="filter-date">
+                            <option value="">Fecha sesión</option>
+                        </select>
+                    </div>
+                </div>
+
+            </form>
+        </section>
+
+        <!-- Contenedor de Resultados -->
+        <section id="results-section" class="results-section" style="display: none;">
+            
+            <div id="loading-indicator" style="display: none;">
+                <div class="spinner"></div>
+                <p>Analizando documentos...</p>
             </div>
-        </header>
 
-        <div id="messages"></div>
+            <!-- Caja de la Respuesta del LLM -->
+            <div id="ai-answer-container" class="ai-answer-container">
+                <div class="ai-header">
+                    <span class="ai-icon">🤖</span>
+                    <h3>Síntesis Inteligente</h3>
+                </div>
+                <div id="ai-answer-content" class="ai-content"></div>
+                <div id="ai-keywords" class="ai-keywords"></div>
+            </div>
 
-        <form id="chat-form" onsubmit="sendMessage(event)">
-            <input type="text" id="chat-input" placeholder="Escriba su pregunta sobre el Diario de Sesiones..." />
-            <button type="submit">Enviar</button>
-        </form>
-    </div>
+            <!-- Cabecera de resultados -->
+            <div class="results-header" id="results-header">
+                <span id="results-count">Se muestran resultados.</span>
+            </div>
 
-    <script src="/app.js"></script>
+            <!-- Lista de Fragmentos (Fuentes) -->
+            <div id="sources-list" class="sources-list">
+                <!-- Los resultados se inyectan aquí -->
+            </div>
+
+        </section>
+
+    </main>
+
+    <script src="app.js"></script>
 </body>
 
 </html>

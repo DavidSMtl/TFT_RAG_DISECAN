@@ -1,180 +1,191 @@
-//Toggle del sidebar (móvil)
-function toggleSidebar() {
-    document.getElementById("sidebar").classList.toggle("open");
-    document.getElementById("sidebar-overlay").classList.toggle("open");
-}
+// Estado de la búsqueda
+let isSearching = false;
 
-//Limpiar filtros
-function clearFilters() {
-    document.getElementById("search-mode").value = "full";
-    document.getElementById("filter-legislature").value = "";
-    document.getElementById("filter-speaker").value = "";
-    document.getElementById("filter-session").value = "";
-    document.getElementById("filter-date").value = "";
-}
-
-//Añadir un mensaje al chat
-function addMessage(text, role) {
-    const messagesEl = document.getElementById("messages");
-
-    const avatar = role === "user" ? "👤" : "🤖";
-    const div = document.createElement("div");
-    div.className = "msg";
-    div.innerHTML = `
-        <div class="msg-avatar ${role}">${avatar}</div>
-        <div class="msg-bubble ${role}">${text}</div>
-    `;
-    messagesEl.appendChild(div);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-    return div;
-}
-
-//Aplicar resaltado de palabras clave y subrayado de frase
-function applyHighlights(text, keywords, sentenceToUnderline) {
-    if (!text) return "";
-    let highlightedText = text;
-
-    // 1. Subrayar la frase completa (fragmento) dentro del contexto
-    if (sentenceToUnderline && sentenceToUnderline.length > 5) {
-        const escapedSentence = sentenceToUnderline.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const sentenceRegex = new RegExp(`(${escapedSentence})`, "gi");
-        highlightedText = highlightedText.replace(sentenceRegex, '<span class="underlined-sentence">$1</span>');
-    }
-
-    // 2. Resaltar palabras clave individuales
-    if (keywords && keywords.length > 0) {
-        // Ordenamos por longitud descendente para evitar que palabras cortas rompan el resaltado de largas
-        const sortedKeywords = Array.from(new Set(keywords)).sort((a, b) => b.length - a.length);
-        
-        sortedKeywords.forEach(word => {
-            if (word.length < 3) return; // Evitar resaltar cosas demasiado cortas
-            const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            // Usamos lookaheads/lookbehinds o límites de palabra para evitar resaltar dentro de HTML
-            const wordRegex = new RegExp(`\\b(${escapedWord})\\b`, "gi");
-            
-            // Lógica para no resaltar dentro de etiquetas ya creadas
-            const parts = highlightedText.split(/(<[^>]+>)/g);
-            highlightedText = parts.map(part => {
-                if (part.startsWith("<")) return part;
-                return part.replace(wordRegex, '<span class="highlighted-word">$1</span>');
-            }).join("");
-        });
-    }
-
-    return highlightedText;
-}
-
-//Añadir respuesta del asistente con fuentes
-function addBotMessage(answer, sources, keywords) {
-    const messagesEl = document.getElementById("messages");
-
-    let sourcesHtml = "";
-    // Se muestran todas las fuentes retornadas por el backend
-    const displaySources = sources ? sources : [];
-    
-    if (displaySources.length > 0) {
-        let fragmentsHtml = displaySources.map((s, index) => {
-            const contextId = `context-${Date.now()}-${index}`;
-            
-            // Aplicar resaltados
-            const highlightedFragment = applyHighlights(s.fragment, keywords, null);
-            const highlightedContext = applyHighlights(s.context, keywords, s.fragment);
-
-            return `
-                <div class="source-item">
-                    <div class="source-header">
-                        <span class="source-speaker">👤 ${s.speaker}</span>
-                        <span class="score-badge">${s.score}% Relevancia</span>
-                    </div>
-                    
-                    <div class="source-fragment">
-                        "${highlightedFragment}"
-                    </div>
-                    
-                    ${s.context ? `
-                        <button class="context-toggle-btn" onclick="document.getElementById('${contextId}').classList.toggle('open')">
-                            🔍 Mostrar contexto completo
-                        </button>
-                        <div id="${contextId}" class="source-context">
-                            ${highlightedContext}
-                        </div>
-                    ` : ""}
-
-                    <div class="source-meta">
-                        <span>📅 ${s.date}</span>
-                        <span>🏛️ ${s.legislature}</span>
-                        <a href="${s.pdf_url}" target="_blank">📄 Diario de Sesiones (PDF)</a>
-                    </div>
-                </div>
-            `;
-        }).join("");
-
-        sourcesHtml = `
-            <div style="margin-top: 1.5rem; border-top: 1px solid #ddd; padding-top: 1rem;">
-                <h4 style="color: #004b8d; margin-bottom: 0.5rem; font-size: 0.9rem;">📚 FUENTES RELACIONADAS</h4>
-                <div class="sources-content open">
-                    ${fragmentsHtml}
-                </div>
-            </div>
-        `;
-    }
-
-    // Usar marked para procesar el Markdown (negritas, listas, saltos de línea)
-    const formattedAnswer = marked.parse(answer);
-
-    const div = document.createElement("div");
-    div.className = "msg";
-    div.innerHTML = `
-        <div class="msg-avatar bot">🤖</div>
-        <div class="msg-bubble bot">
-            <div class="markdown-body">${formattedAnswer}</div>
-            ${sourcesHtml}
-        </div>
-    `;
-    messagesEl.appendChild(div);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-
-//Envío del formulario
-async function sendMessage(event) {
+// ── Búsqueda ─────────────────────────────────────────────────────────────────
+async function performSearch(event) {
     event.preventDefault();
+    if (isSearching) return;
 
-    const input = document.getElementById("chat-input");
-    const query = input.value.trim();
+    const inputEl = document.getElementById("search-input");
+    const modeEl = document.getElementById("search-mode");
+    
+    // Filtros
+    const legislature = document.getElementById("filter-legislature").value;
+    const date = document.getElementById("filter-date").value;
+    const speaker = document.getElementById("filter-speaker").value;
+
+    const query = inputEl.value.trim();
     if (!query) return;
 
-    input.value = "";
-    addMessage(query, "user");
+    // UI Updates
+    isSearching = true;
+    document.getElementById("results-section").style.display = "block";
+    document.getElementById("loading-indicator").style.display = "block";
+    document.getElementById("ai-answer-container").style.display = "none";
+    document.getElementById("sources-list").innerHTML = "";
+    document.getElementById("results-header").style.display = "none";
 
-    const loadingDiv = addMessage("...", "bot");
+    const payload = {
+        query: query,
+        mode: modeEl.value,
+        filters: {}
+    };
+
+    if (legislature) payload.filters.legislatura = legislature;
+    if (date) payload.filters.fecha = date;
+    if (speaker) payload.filters.orador = speaker;
 
     try {
         const response = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                query: query,
-                mode: document.getElementById("search-mode").value,
-                filters: {
-                    legislatura: document.getElementById("filter-legislature").value,
-                    orador: document.getElementById("filter-speaker").value,
-                    sesion: document.getElementById("filter-session").value,
-                    fecha: document.getElementById("filter-date").value,
-                }
-            }),
+            body: JSON.stringify(payload)
         });
 
         const data = await response.json();
-        loadingDiv.remove();
+        
+        document.getElementById("loading-indicator").style.display = "none";
 
-        if (data.error) {
-            addMessage(` ${data.error}`, "bot");
-        } else {
-            addBotMessage(data.answer, data.sources, data.keywords);
+        if (!response.ok) {
+            showError(data.error || "Error de red.");
+            return;
         }
 
+        renderResults(data);
+
     } catch (error) {
-        loadingDiv.querySelector(".msg-bubble").textContent = "Error al procesar la consulta.";
-        console.error("Chat Error:", error);
+        document.getElementById("loading-indicator").style.display = "none";
+        showError("No se pudo conectar con el servidor: " + error.message);
+    } finally {
+        isSearching = false;
     }
+}
+
+// ── Renderizado ──────────────────────────────────────────────────────────────
+function renderResults(data) {
+    const { answer, sources, keywords, mode } = data;
+
+    // 1. Mostrar IA (solo si no es modo lingüístico estricto y hay respuesta)
+    if (mode === "full" && answer) {
+        document.getElementById("ai-answer-container").style.display = "block";
+        document.getElementById("ai-answer-content").innerHTML = marked.parse(answer);
+        
+        const kwContainer = document.getElementById("ai-keywords");
+        kwContainer.innerHTML = "<strong>Términos extraídos:</strong> " + 
+            (keywords && keywords.length > 0 
+                ? keywords.map(kw => `<span class="keyword-tag">${kw}</span>`).join("")
+                : "Ninguno");
+    }
+
+    // 2. Cabecera de resultados
+    const header = document.getElementById("results-header");
+    header.style.display = "block";
+    const countSpan = document.getElementById("results-count");
+    
+    if (!sources || sources.length === 0) {
+        countSpan.innerHTML = "No se encontraron coincidencias para la búsqueda.";
+        return;
+    }
+    
+    countSpan.innerHTML = `Mostrando ${sources.length} fragmentos recuperados.`;
+
+    // 3. Lista de Fragmentos
+    const listContainer = document.getElementById("sources-list");
+    
+    sources.forEach((src, idx) => {
+        const item = document.createElement("div");
+        item.className = "source-item";
+
+        let fragmentHtml = src.fragment || "";
+        let contextHtml = src.context || "";
+
+        // Subrayar el fragmento dentro del contexto ANTES de resaltar palabras clave
+        if (contextHtml && fragmentHtml) {
+            // Escapar regex
+            const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Intentar buscar la frase literal exacta dentro del párrafo para subrayarla
+            const fragmentPattern = new RegExp(escapeRegExp(fragmentHtml), 'g');
+            if (fragmentPattern.test(contextHtml)) {
+                contextHtml = contextHtml.replace(fragmentPattern, '<span class="underlined-sentence">$&</span>');
+            }
+        }
+
+        // Resaltar palabras clave en el fragmento y el contexto
+        fragmentHtml = highlightKeywords(fragmentHtml, keywords);
+        contextHtml = highlightKeywords(contextHtml, keywords);
+
+        // Reemplazar saltos de línea por <br>
+        fragmentHtml = fragmentHtml.replace(/\n/g, '<br>');
+        contextHtml = contextHtml.replace(/\n/g, '<br>');
+        
+        item.innerHTML = `
+            <div class="source-score">${src.score}%</div>
+            <div class="source-fragment">${fragmentHtml}</div>
+            <div class="source-meta">
+                — DIARIO DE SESIONES [${src.legislature || 'Legislatura desc.'}] | ${src.speaker} | ${src.date}
+            </div>
+            ${src.context ? `
+                <button class="context-toggle-btn" onclick="toggleContext('ctx-${idx}')">Ver contexto completo</button>
+                <div id="ctx-${idx}" class="source-context">
+                    ${contextHtml}
+                </div>
+            ` : ""}
+        `;
+        listContainer.appendChild(item);
+    });
+}
+
+// Helper para resaltar palabras clave sin romper el HTML y tolerando acentos
+function highlightKeywords(htmlString, keywords) {
+    if (!keywords || keywords.length === 0) return htmlString;
+    
+    // Filtrar palabras muy cortas y ordenar por longitud descendente
+    const sortedKws = keywords
+        .filter(k => k.length > 2)
+        .sort((a, b) => b.length - a.length);
+    
+    if (sortedKws.length === 0) return htmlString;
+
+    const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    // Convertir vocal a una clase regex que acepte con o sin tilde
+    const makeAccentInsensitive = (str) => {
+        return escapeRegExp(str)
+            .replace(/a/gi, '[aáAÁ]')
+            .replace(/e/gi, '[eéEÉ]')
+            .replace(/i/gi, '[iíIÍ]')
+            .replace(/o/gi, '[oóOÓ]')
+            .replace(/u/gi, '[uúUÚüÜ]');
+    };
+
+    let result = htmlString;
+    
+    for (const kw of sortedKws) {
+        const basePattern = makeAccentInsensitive(kw);
+        // Construimos un regex que admita sufijos comunes (s, es, mente, os, as)
+        // y que use (?![^<]*>) para evitar romper atributos HTML como class="..."
+        // Usamos un boundary flexible (^|\s|[>.,!?;:'"()/-]) y lo mismo al final
+        // para asegurarnos de no cazar partes en medio de otras palabras largas,
+        // pero \b en JS no funciona bien con caracteres acentuados, así que hacemos esto:
+        
+        const pattern = new RegExp(`(^|\\s|[>.,!?;:'"()\\/-])(${basePattern}(?:s|es|mente|os|as)?)(?=[\\s<.,!?;:'"()\\/-]|$)`, 'gi');
+        
+        // Reemplazamos manteniendo el prefijo ($1) y envolviendo la coincidencia ($2)
+        result = result.replace(pattern, '$1<span class="highlighted-word">$2</span>');
+    }
+    return result;
+}
+
+function toggleContext(id) {
+    const ctx = document.getElementById(id);
+    if (ctx.classList.contains("open")) {
+        ctx.classList.remove("open");
+    } else {
+        ctx.classList.add("open");
+    }
+}
+
+function showError(msg) {
+    document.getElementById("results-header").style.display = "block";
+    document.getElementById("results-count").innerHTML = `<span style="color:red; font-weight:bold;">Error:</span> ${msg}`;
 }

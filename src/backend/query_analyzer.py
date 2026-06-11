@@ -1,11 +1,10 @@
 import json
 import logging
 import re
-from typing import List, Dict, Any, Optional
+from typing import List
 from llama_index.llms.ollama import Ollama
 from pydantic import BaseModel, Field
 
-# ── Logger ────────────────────────────────────────────────────────────────────
 logger = logging.getLogger("disecan.analyzer")
 
 class SearchPlan(BaseModel):
@@ -15,95 +14,88 @@ class SearchPlan(BaseModel):
     entities: List[str] = Field(default_factory=list, description="Nombres propios, leyes, lugares")
     hypothetical_answer: str = Field(default="", description="Párrafo HyDE: para búsqueda semántica")
     intent: str = Field(default="hybrid", description="exact, semantic, hybrid")
-    must_have: List[str] = Field(default_factory=list) # Por compatibilidad
-    expansion: List[str] = Field(default_factory=list) # Por compatibilidad
-    exact_phrases: List[str] = Field(default_factory=list) # Por compatibilidad
 
 class QueryAnalyzer:
     def __init__(self, model_name: str = "qwen2.5:3b", base_url: str = "http://localhost:11434"):
         self.llm = Ollama(model=model_name, base_url=base_url, request_timeout=30.0)
         
     def analyze(self, query: str) -> SearchPlan:
-        logger.debug("=" * 60)
-        logger.debug(f"[Analyzer] ▶ QUERY RECIBIDA: '{query}'")
+        logger.debug(f"[Analyzer] ▶ Analizando Query: '{query}'")
 
-        # Si la consulta contiene sintaxis especial de DiSeCan, la tratamos como término directo secuencial para evitar que el LLM la altere o rompa
+        # Bypaseo si tiene sintaxis especial de DiSeCan
         if any(c in query for c in "[]<>*") or ":" in query:
-            logger.info("[Analyzer] Sintaxis especial de DiSeCan detectada. Bypaseando LLM.")
-            return SearchPlan(
-                semantic_concepts=[],
-                literal_terms=[],
-                sequential_phrases=[query.strip()],
-                intent="exact"
-            )
+            logger.info("[Analyzer] Sintaxis especial detectada. Bypaseando LLM.")
+            return SearchPlan(sequential_phrases=[query.strip()], intent="exact")
 
-        # Regex para detectar comillas manuales (se tratan como literales)
         manual_quotes = re.findall(r'"([^"]*)"', query)
-        if manual_quotes:
-            logger.debug(f"[Analyzer]   Comillas manuales detectadas: {manual_quotes}")
         
         prompt = f"""
-Eres un Analista Lexicográfico y Experto en Debates del Parlamento de Canarias. Tu misión es transformar una consulta en lenguaje natural en un 'SearchPlan' técnico altamente preciso para un sistema RAG.
+Eres un experto en Recuperación de Información y Lingüística (RAG) trabajando para el Parlamento de Canarias.
+Tu objetivo es analizar una consulta de usuario y extraer sus componentes para alimentar un motor de búsqueda híbrido (Semántico + SQL Lexicográfico).
 
-REGLAS DE CATEGORIZACIÓN:
-1. 'sequential_phrases': Úsalo para N-gramas donde el orden y las palabras vacías (de, la, no, el) son CRÍTICOS para el significado legal. 
-   - Ej: "Proposición no de ley", "Comisión de Sanidad", "Diario de Sesiones".
-2. 'literal_terms': Palabras que NO deben lematizarse. El usuario busca la forma morfológica exacta.
-   - Ej: "encarecimiento" (no buscar 'caro'), "subvencionadas" (específico femenino plural).
-3. 'semantic_concepts': Conceptos generales. DEBES realizar EXPANSIÓN LÉXICA (sinónimos/temas relacionados) para alimentar al buscador.
-   - Ej: si busca "cesta de la compra", expande a ["inflación", "precios", "coste de vida"].
-4. 'entities': Nombres de diputados, instituciones o leyes específicas (ej: "Casimiro Curbelo", "Copecan", "Ley del Suelo").
-5. 'hypothetical_answer': Escribe un párrafo breve (2 frases) que simule una respuesta ideal. Esto mejora la recuperación semántica (técnica HyDE).
+INSTRUCCIONES ESTRICTAS:
+1. Devuelve ÚNICAMENTE un objeto JSON válido. No añadas texto antes ni después.
+2. Analiza los componentes siguiendo esta estructura:
+   - "semantic_concepts": Lista de conceptos temáticos de la consulta y al menos 2 sinónimos o palabras relacionadas para expandir la búsqueda. (Ej: Si busca "sanidad", añade "hospitales", "salud", "médicos").
+   - "literal_terms": Palabras clave muy específicas que deben buscarse exactas (adjetivos clave, verbos concretos).
+   - "sequential_phrases": Frases hechas o conceptos compuestos donde el orden de las palabras no debe romperse.
+   - "entities": Entidades nombradas como instituciones, leyes, islas, municipios o personas.
+   - "hypothetical_answer": Un párrafo de 2 líneas simulando una respuesta hipotética ideal a la pregunta (para usar técnica HyDE).
+   - "intent": Siempre usa "hybrid".
 
-EJEMPLOS:
-Consulta: "¿Por qué está tan cara la cesta de la compra?"
-Respuesta: {{
-  "semantic_concepts": ["cesta de la compra", "inflación", "precios", "coste de vida", "economía doméstica"],
-  "literal_terms": ["cara"],
-  "sequential_phrases": [],
+EJEMPLO 1:
+Consulta: "¿Qué se dijo sobre la cesta de la compra y su encarecimiento?"
+{{
+  "semantic_concepts": ["cesta de la compra", "inflación", "precios", "coste de vida", "economía"],
+  "literal_terms": ["encarecimiento"],
+  "sequential_phrases": ["cesta de la compra"],
   "entities": [],
-  "hypothetical_answer": "El encarecimiento de la cesta de la compra se debe al aumento de la inflación y los costes de transporte en Canarias.",
+  "hypothetical_answer": "El encarecimiento de la cesta de la compra es un problema grave. Se propone reducir el IGIC a los productos básicos para aliviar la inflación.",
+  "intent": "hybrid"
+}}
+
+EJEMPLO 2:
+Consulta: "Buscar sobre la Universidad de Las Palmas de Gran Canaria"
+{{
+  "semantic_concepts": ["educación superior", "universidad", "formación universitaria", "instituciones académicas"],
+  "literal_terms": [],
+  "sequential_phrases": ["Universidad de Las Palmas de Gran Canaria", "ULPGC"],
+  "entities": ["Universidad de Las Palmas de Gran Canaria", "Gran Canaria", "Las Palmas"],
+  "hypothetical_answer": "La Universidad de Las Palmas de Gran Canaria (ULPGC) es un referente en la educación superior del archipiélago. Ha recibido nuevas inversiones para mejorar sus facultades.",
   "intent": "hybrid"
 }}
 
 Consulta Actual: "{query}"
-Respuesta (solo JSON):
+Respuesta JSON:
 """
-        logger.debug(f"[Analyzer] PROMPT ENVIADO AL LLM")
-        logger.debug(prompt)
         try:
             response = self.llm.complete(prompt)
             raw_text = response.text.strip()
-            logger.debug(f"[Analyzer] RESPUESTA DEL LLM")
-            logger.debug(raw_text)
             data = json.loads(raw_text)
             
-            # Sanatizar entidades para asegurar que son strings (el LLM a veces devuelve dicts)
-            raw_entities = data.get("entities", [])
-            data["entities"] = [
-                e["name"] if isinstance(e, dict) and "name" in e else str(e) 
-                for e in raw_entities
-            ]
+            # Asegurar que todos los campos de lista sean strings, ya que el LLM a veces devuelve diccionarios
+            for field in ["semantic_concepts", "literal_terms", "sequential_phrases", "entities"]:
+                raw_list = data.get(field, [])
+                if not isinstance(raw_list, list):
+                    raw_list = [raw_list]
+                cleaned_list = []
+                for item in raw_list:
+                    if isinstance(item, dict):
+                        # Extraer el primer valor del diccionario o usar str()
+                        vals = list(item.values())
+                        cleaned_list.append(str(vals[0]) if vals else str(item))
+                    else:
+                        cleaned_list.append(str(item))
+                data[field] = cleaned_list
 
-            # Retrocompatibilidad y limpieza
-            data["must_have"] = data.get("semantic_concepts", [])
-            data["expansion"] = data.get("literal_terms", [])
-            data["exact_phrases"] = data.get("sequential_phrases", [])
-            
             if manual_quotes:
                 data.setdefault("literal_terms", []).extend(manual_quotes)
                 data["literal_terms"] = list(set(data["literal_terms"]))
             
             plan = SearchPlan(**data)
-
-            logger.debug(f"[Analyzer] ── SEARCH PLAN CONSTRUIDO ({'─' * 18})")
-            logger.debug(f"[Analyzer]   intent            : {plan.intent}")
-            logger.debug(f"[Analyzer]   semantic_concepts : {plan.semantic_concepts}")
-            logger.debug(f"[Analyzer]   literal_terms     : {plan.literal_terms}")
-            logger.debug(f"[Analyzer]   sequential_phrases: {plan.sequential_phrases}")
-            logger.debug(f"[Analyzer]   entities          : {plan.entities}")
-            logger.debug(f"[Analyzer]   hypothetical_ans  : {plan.hypothetical_answer[:120]}")
+            logger.info(f"[Analyzer] ✔ Plan generado: concepts={plan.semantic_concepts}")
             return plan
+            
         except Exception as e:
-            logger.error(f"[Analyzer] ERROR al analizar: {e}. Pasando a usar palabras clave.")
+            logger.error(f"[Analyzer] Fallo en LLM ({e}). Usando fallback léxico.")
             return SearchPlan(semantic_concepts=query.split())
